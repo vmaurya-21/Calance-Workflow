@@ -51,6 +51,9 @@ func SetupRouter(db interface{}, cfg *config.Config) *gin.Engine {
 			// TODO: Protected auth routes (database required)
 			// auth.GET("/me", middleware.AuthMiddleware(), authController.GetCurrentUser)
 			// auth.POST("/logout", middleware.AuthMiddleware(), authController.Logout)
+
+			// Organizations endpoint (requires valid JWT)
+			auth.GET("/organizations", authController.GetUserOrganizations)
 		}
 
 		// Protected API routes example

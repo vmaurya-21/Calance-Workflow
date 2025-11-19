@@ -102,8 +102,8 @@ func (ac *AuthController) GitHubCallback(c *gin.Context) {
 	// 	return
 	// }
 
-	// Generate JWT token
-	jwtToken, err := utils.GenerateToken(user.ID, githubUser.ID, githubUser.Login, githubUser.Email)
+	// Generate JWT token with GitHub access token
+	jwtToken, err := utils.GenerateToken(user.ID, githubUser.ID, githubUser.Login, githubUser.Email, token.AccessToken)
 	if err != nil {
 		log.Printf("Failed to generate JWT: %v", err)
 		utils.InternalServerErrorResponse(c, "Failed to generate authentication token", err)
@@ -129,8 +129,48 @@ func (ac *AuthController) GetCurrentUser(c *gin.Context) {
 // POST /api/auth/logout
 func (ac *AuthController) Logout(c *gin.Context) {
 	// JWT is stateless, so logout is handled client-side by removing the token
-	// You can implement token blacklisting here if needed
 	utils.SuccessResponse(c, http.StatusOK, "Logged out successfully", nil)
+}
+
+// GetUserOrganizations returns all GitHub organizations for the authenticated user
+// GET /api/auth/organizations
+func (ac *AuthController) GetUserOrganizations(c *gin.Context) {
+	// Get the authorization header
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		utils.UnauthorizedResponse(c, "Authorization header is required")
+		return
+	}
+
+	// Extract token from header
+	tokenString, err := utils.ExtractTokenFromHeader(authHeader)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "Invalid authorization header format")
+		return
+	}
+
+	// Validate JWT token
+	claims, err := utils.ValidateToken(tokenString)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "Invalid or expired token")
+		return
+	}
+
+	log.Printf("DEBUG - Fetching organizations for user: %s", claims.Username)
+
+	// Get organizations using the GitHub token stored in JWT
+	organizations, err := ac.oauthService.GetUserOrganizations(c.Request.Context(), claims.GitHubToken)
+	if err != nil {
+		log.Printf("ERROR - Failed to fetch organizations: %v", err)
+		utils.InternalServerErrorResponse(c, "Failed to fetch organizations", err)
+		return
+	}
+
+	utils.SuccessResponse(c, http.StatusOK, "Organizations fetched successfully", gin.H{
+		"user":               claims.Username,
+		"organizations":      organizations,
+		"organization_count": len(organizations),
+	})
 }
 
 // generateRandomState generates a random state string for CSRF protection

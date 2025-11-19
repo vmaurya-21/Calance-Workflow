@@ -17,15 +17,16 @@ var (
 
 // JWTClaims represents the JWT claims
 type JWTClaims struct {
-	UserID   uuid.UUID `json:"user_id"`
-	GitHubID int64     `json:"github_id"`
-	Username string    `json:"username"`
-	Email    string    `json:"email"`
+	UserID      uuid.UUID `json:"user_id"`
+	GitHubID    int64     `json:"github_id"`
+	Username    string    `json:"username"`
+	Email       string    `json:"email"`
+	GitHubToken string    `json:"github_token"`
 	jwt.RegisteredClaims
 }
 
 // GenerateToken generates a new JWT token for a user
-func GenerateToken(userID uuid.UUID, githubID int64, username, email string) (string, error) {
+func GenerateToken(userID uuid.UUID, githubID int64, username, email, githubToken string) (string, error) {
 	cfg := config.AppConfig
 	if cfg == nil {
 		return "", errors.New("config not initialized")
@@ -34,10 +35,11 @@ func GenerateToken(userID uuid.UUID, githubID int64, username, email string) (st
 	expirationTime := time.Now().Add(time.Duration(cfg.JWT.ExpirationHours) * time.Hour)
 
 	claims := &JWTClaims{
-		UserID:   userID,
-		GitHubID: githubID,
-		Username: username,
-		Email:    email,
+		UserID:      userID,
+		GitHubID:    githubID,
+		Username:    username,
+		Email:       email,
+		GitHubToken: githubToken,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
