@@ -173,6 +173,96 @@ func (ac *AuthController) GetUserOrganizations(c *gin.Context) {
 	})
 }
 
+// GetOrganizationRepositories returns all repositories for a specific organization
+// GET /api/auth/organizations/:org/repositories
+func (ac *AuthController) GetOrganizationRepositories(c *gin.Context) {
+	// Get organization name from URL parameter
+	orgName := c.Param("org")
+	if orgName == "" {
+		utils.ErrorResponse(c, http.StatusBadRequest, "Organization name is required", nil)
+		return
+	}
+
+	// Get the authorization header
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		utils.UnauthorizedResponse(c, "Authorization header is required")
+		return
+	}
+
+	// Extract token from header
+	tokenString, err := utils.ExtractTokenFromHeader(authHeader)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "Invalid authorization header format")
+		return
+	}
+
+	// Validate JWT token
+	claims, err := utils.ValidateToken(tokenString)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "Invalid or expired token")
+		return
+	}
+
+	log.Printf("DEBUG - Fetching repositories for organization: %s", orgName)
+
+	// Get repositories for the organization
+	repositories, err := ac.oauthService.GetOrganizationRepositories(c.Request.Context(), claims.GitHubToken, orgName)
+	if err != nil {
+		log.Printf("ERROR - Failed to fetch repositories: %v", err)
+		utils.InternalServerErrorResponse(c, "Failed to fetch repositories", err)
+		return
+	}
+
+	utils.SuccessResponse(c, http.StatusOK, "Repositories fetched successfully", gin.H{
+		"user":            claims.Username,
+		"organization":    orgName,
+		"repositories":    repositories,
+		"repository_count": len(repositories),
+	})
+}
+
+// GetUserRepositories returns all repositories accessible to the authenticated user from their organizations
+// GET /api/auth/repositories
+func (ac *AuthController) GetUserRepositories(c *gin.Context) {
+	// Get the authorization header
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		utils.UnauthorizedResponse(c, "Authorization header is required")
+		return
+	}
+
+	// Extract token from header
+	tokenString, err := utils.ExtractTokenFromHeader(authHeader)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "Invalid authorization header format")
+		return
+	}
+
+	// Validate JWT token
+	claims, err := utils.ValidateToken(tokenString)
+	if err != nil {
+		utils.UnauthorizedResponse(c, "Invalid or expired token")
+		return
+	}
+
+	log.Printf("DEBUG - Fetching all accessible repositories for user: %s", claims.Username)
+
+	// Get repositories from all organizations
+	repositoriesByOrg, err := ac.oauthService.GetUserRepositories(c.Request.Context(), claims.GitHubToken)
+	if err != nil {
+		log.Printf("ERROR - Failed to fetch repositories: %v", err)
+		utils.InternalServerErrorResponse(c, "Failed to fetch repositories", err)
+		return
+	}
+
+	utils.SuccessResponse(c, http.StatusOK, "Repositories fetched successfully", gin.H{
+		"user":              claims.Username,
+		"repositories_by_org": repositoriesByOrg,
+		"organization_count": len(repositoriesByOrg),
+	})
+}
+
 // generateRandomState generates a random state string for CSRF protection
 func generateRandomState() (string, error) {
 	b := make([]byte, 32)

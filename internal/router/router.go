@@ -54,6 +54,10 @@ func SetupRouter(db interface{}, cfg *config.Config) *gin.Engine {
 
 			// Organizations endpoint (requires valid JWT)
 			auth.GET("/organizations", authController.GetUserOrganizations)
+
+			// Repository endpoints (requires valid JWT)
+			auth.GET("/repositories", authController.GetUserRepositories)
+			auth.GET("/organizations/:org/repositories", authController.GetOrganizationRepositories)
 		}
 
 		// Protected API routes example
