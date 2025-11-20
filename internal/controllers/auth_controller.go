@@ -215,9 +215,9 @@ func (ac *AuthController) GetOrganizationRepositories(c *gin.Context) {
 	}
 
 	utils.SuccessResponse(c, http.StatusOK, "Repositories fetched successfully", gin.H{
-		"user":            claims.Username,
-		"organization":    orgName,
-		"repositories":    repositories,
+		"user":             claims.Username,
+		"organization":     orgName,
+		"repositories":     repositories,
 		"repository_count": len(repositories),
 	})
 }
@@ -257,9 +257,9 @@ func (ac *AuthController) GetUserRepositories(c *gin.Context) {
 	}
 
 	utils.SuccessResponse(c, http.StatusOK, "Repositories fetched successfully", gin.H{
-		"user":              claims.Username,
+		"user":                claims.Username,
 		"repositories_by_org": repositoriesByOrg,
-		"organization_count": len(repositoriesByOrg),
+		"organization_count":  len(repositoriesByOrg),
 	})
 }
 
