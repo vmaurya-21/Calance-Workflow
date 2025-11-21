@@ -9,14 +9,14 @@ import (
 
 type User struct {
 	ID        uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
-	GitHubID  int64          `gorm:"uniqueIndex;not null" json:"github_id"`
+	GitHubID  int64          `gorm:"column:github_id;uniqueIndex;not null" json:"github_id"`
 	Username  string         `gorm:"not null" json:"username"`
-	Email     string         `gorm:"uniqueIndex" json:"email"`
+	Email     *string        `json:"email,omitempty"`
 	AvatarURL string         `json:"avatar_url"`
-	Name      string         `json:"name"`
-	Bio       string         `json:"bio"`
-	Location  string         `json:"location"`
-	Company   string         `json:"company"`
+	Name      *string        `json:"name,omitempty"`
+	Bio       *string        `json:"bio,omitempty"`
+	Location  *string        `json:"location,omitempty"`
+	Company   *string        `json:"company,omitempty"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
@@ -38,12 +38,12 @@ type UserResponse struct {
 	ID        uuid.UUID `json:"id"`
 	GitHubID  int64     `json:"github_id"`
 	Username  string    `json:"username"`
-	Email     string    `json:"email"`
+	Email     *string   `json:"email,omitempty"`
 	AvatarURL string    `json:"avatar_url"`
-	Name      string    `json:"name"`
-	Bio       string    `json:"bio"`
-	Location  string    `json:"location"`
-	Company   string    `json:"company"`
+	Name      *string   `json:"name,omitempty"`
+	Bio       *string   `json:"bio,omitempty"`
+	Location  *string   `json:"location,omitempty"`
+	Company   *string   `json:"company,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

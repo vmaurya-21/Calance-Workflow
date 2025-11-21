@@ -41,9 +41,7 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// Set user information in context
 		c.Set("user_id", claims.UserID.String())
-		c.Set("github_id", claims.GitHubID)
 		c.Set("username", claims.Username)
-		c.Set("email", claims.Email)
 
 		c.Next()
 	}
@@ -72,9 +70,7 @@ func OptionalAuthMiddleware() gin.HandlerFunc {
 
 		// Set user information in context
 		c.Set("user_id", claims.UserID.String())
-		c.Set("github_id", claims.GitHubID)
 		c.Set("username", claims.Username)
-		c.Set("email", claims.Email)
 
 		c.Next()
 	}

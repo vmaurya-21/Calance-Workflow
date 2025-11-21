@@ -20,7 +20,7 @@ func NewUserRepository(db *gorm.DB) *UserRepository {
 // FindByGitHubID finds a user by GitHub ID
 func (r *UserRepository) FindByGitHubID(githubID int64) (*models.User, error) {
 	var user models.User
-	err := r.db.Where("git_hub_id = ?", githubID).First(&user).Error
+	err := r.db.Where("github_id = ?", githubID).First(&user).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil

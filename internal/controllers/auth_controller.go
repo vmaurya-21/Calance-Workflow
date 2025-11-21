@@ -8,29 +8,33 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/vmaurya-21/Calance-Workflow/internal/config"
-
-	// "github.com/vmaurya-21/Calance-Workflow/internal/repositories"
+	"github.com/vmaurya-21/Calance-Workflow/internal/models"
+	"github.com/vmaurya-21/Calance-Workflow/internal/repositories"
 	"github.com/vmaurya-21/Calance-Workflow/internal/services"
 	"github.com/vmaurya-21/Calance-Workflow/internal/utils"
 )
 
 type AuthController struct {
-	oauthService   *services.GitHubOAuthService
-	userRepository interface{} // TODO: Database support
-	config         *config.Config
+	oauthService    *services.GitHubOAuthService
+	userRepository  *repositories.UserRepository
+	tokenRepository *repositories.TokenRepository
+	config          *config.Config
 }
 
 // NewAuthController creates a new auth controller
 func NewAuthController(
 	oauthService *services.GitHubOAuthService,
-	userRepository interface{},
+	userRepository *repositories.UserRepository,
+	tokenRepository *repositories.TokenRepository,
 	cfg *config.Config,
 ) *AuthController {
 	return &AuthController{
-		oauthService:   oauthService,
-		userRepository: userRepository,
-		config:         cfg,
+		oauthService:    oauthService,
+		userRepository:  userRepository,
+		tokenRepository: tokenRepository,
+		config:          cfg,
 	}
 }
 
@@ -95,15 +99,39 @@ func (ac *AuthController) GitHubCallback(c *gin.Context) {
 	// Convert to User model
 	user := ac.oauthService.ConvertToUser(githubUser)
 
-	// TODO: Create or update user in database
-	// if err := ac.userRepository.CreateOrUpdate(user); err != nil {
-	// 	log.Printf("Failed to create/update user: %v", err)
-	// 	utils.InternalServerErrorResponse(c, "Failed to save user", err)
-	// 	return
-	// }
+	// Create or update user in database
+	if err := ac.userRepository.CreateOrUpdate(user); err != nil {
+		log.Printf("Failed to create/update user: %v", err)
+		utils.InternalServerErrorResponse(c, "Failed to save user", err)
+		return
+	}
 
-	// Generate JWT token with GitHub access token
-	jwtToken, err := utils.GenerateToken(user.ID, githubUser.ID, githubUser.Login, githubUser.Email, token.AccessToken)
+	// Fetch the updated user to get the correct UUID
+	savedUser, err := ac.userRepository.FindByGitHubID(user.GitHubID)
+	if err != nil || savedUser == nil {
+		log.Printf("Failed to fetch saved user: %v", err)
+		utils.InternalServerErrorResponse(c, "Failed to retrieve saved user", err)
+		return
+	}
+
+	// Create or update token in database
+	expiry := token.Expiry
+	tokenModel := &models.Token{
+		UserID:      savedUser.ID,
+		AccessToken: token.AccessToken,
+		TokenType:   token.TokenType,
+		Scope:       "user:email,read:user,read:org,repo", // Default scopes
+		ExpiresAt:   &expiry,
+	}
+
+	if err := ac.tokenRepository.CreateOrUpdate(tokenModel); err != nil {
+		log.Printf("Failed to create/update token: %v", err)
+		utils.InternalServerErrorResponse(c, "Failed to save access token", err)
+		return
+	}
+
+	// Generate JWT token with minimal info (only user_id and username)
+	jwtToken, err := utils.GenerateToken(savedUser.ID, savedUser.Username)
 	if err != nil {
 		log.Printf("Failed to generate JWT: %v", err)
 		utils.InternalServerErrorResponse(c, "Failed to generate authentication token", err)
@@ -111,7 +139,7 @@ func (ac *AuthController) GitHubCallback(c *gin.Context) {
 	}
 
 	// Log successful GitHub OAuth
-	log.Printf("GitHub OAuth successful for user: %s", githubUser.Login)
+	log.Printf("GitHub OAuth successful for user: %s", savedUser.Username)
 
 	// Redirect to frontend with token
 	frontendURL := fmt.Sprintf("%s/auth/callback?token=%s", ac.config.Frontend.URL, jwtToken)
@@ -120,9 +148,30 @@ func (ac *AuthController) GitHubCallback(c *gin.Context) {
 
 // GetCurrentUser returns the current authenticated user
 // GET /api/auth/me
-// TODO: Implement when database is available
 func (ac *AuthController) GetCurrentUser(c *gin.Context) {
-	utils.SuccessResponse(c, http.StatusOK, "User endpoint - database required", nil)
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.UnauthorizedResponse(c, "User not found in context")
+		return
+	}
+
+	userUUID, err := uuid.Parse(userID.(string))
+	if err != nil {
+		utils.InternalServerErrorResponse(c, "Invalid user ID format", err)
+		return
+	}
+
+	user, err := ac.userRepository.FindByID(userUUID)
+	if err != nil {
+		utils.InternalServerErrorResponse(c, "Failed to fetch user", err)
+		return
+	}
+	if user == nil {
+		utils.ErrorResponse(c, http.StatusNotFound, "User not found", nil)
+		return
+	}
+
+	utils.SuccessResponse(c, http.StatusOK, "User fetched successfully", user.ToResponse())
 }
 
 // Logout logs out the user (client-side token removal)
@@ -135,31 +184,33 @@ func (ac *AuthController) Logout(c *gin.Context) {
 // GetUserOrganizations returns all GitHub organizations for the authenticated user
 // GET /api/auth/organizations
 func (ac *AuthController) GetUserOrganizations(c *gin.Context) {
-	// Get the authorization header
-	authHeader := c.GetHeader("Authorization")
-	if authHeader == "" {
-		utils.UnauthorizedResponse(c, "Authorization header is required")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.UnauthorizedResponse(c, "User not found in context")
 		return
 	}
 
-	// Extract token from header
-	tokenString, err := utils.ExtractTokenFromHeader(authHeader)
+	userUUID, err := uuid.Parse(userID.(string))
 	if err != nil {
-		utils.UnauthorizedResponse(c, "Invalid authorization header format")
+		utils.InternalServerErrorResponse(c, "Invalid user ID format", err)
 		return
 	}
 
-	// Validate JWT token
-	claims, err := utils.ValidateToken(tokenString)
+	// Fetch token from database
+	token, err := ac.tokenRepository.FindByUserID(userUUID)
 	if err != nil {
-		utils.UnauthorizedResponse(c, "Invalid or expired token")
+		utils.InternalServerErrorResponse(c, "Failed to fetch access token", err)
+		return
+	}
+	if token == nil {
+		utils.UnauthorizedResponse(c, "Access token not found. Please login again.")
 		return
 	}
 
-	log.Printf("DEBUG - Fetching organizations for user: %s", claims.Username)
+	log.Printf("DEBUG - Fetching organizations for user: %s", userUUID)
 
-	// Get organizations using the GitHub token stored in JWT
-	organizations, err := ac.oauthService.GetUserOrganizations(c.Request.Context(), claims.GitHubToken)
+	// Get organizations using the GitHub token from database
+	organizations, err := ac.oauthService.GetUserOrganizations(c.Request.Context(), token.AccessToken)
 	if err != nil {
 		log.Printf("ERROR - Failed to fetch organizations: %v", err)
 		utils.InternalServerErrorResponse(c, "Failed to fetch organizations", err)
@@ -167,7 +218,6 @@ func (ac *AuthController) GetUserOrganizations(c *gin.Context) {
 	}
 
 	utils.SuccessResponse(c, http.StatusOK, "Organizations fetched successfully", gin.H{
-		"user":               claims.Username,
 		"organizations":      organizations,
 		"organization_count": len(organizations),
 	})
@@ -183,31 +233,33 @@ func (ac *AuthController) GetOrganizationRepositories(c *gin.Context) {
 		return
 	}
 
-	// Get the authorization header
-	authHeader := c.GetHeader("Authorization")
-	if authHeader == "" {
-		utils.UnauthorizedResponse(c, "Authorization header is required")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.UnauthorizedResponse(c, "User not found in context")
 		return
 	}
 
-	// Extract token from header
-	tokenString, err := utils.ExtractTokenFromHeader(authHeader)
+	userUUID, err := uuid.Parse(userID.(string))
 	if err != nil {
-		utils.UnauthorizedResponse(c, "Invalid authorization header format")
+		utils.InternalServerErrorResponse(c, "Invalid user ID format", err)
 		return
 	}
 
-	// Validate JWT token
-	claims, err := utils.ValidateToken(tokenString)
+	// Fetch token from database
+	token, err := ac.tokenRepository.FindByUserID(userUUID)
 	if err != nil {
-		utils.UnauthorizedResponse(c, "Invalid or expired token")
+		utils.InternalServerErrorResponse(c, "Failed to fetch access token", err)
+		return
+	}
+	if token == nil {
+		utils.UnauthorizedResponse(c, "Access token not found. Please login again.")
 		return
 	}
 
 	log.Printf("DEBUG - Fetching repositories for organization: %s", orgName)
 
 	// Get repositories for the organization
-	repositories, err := ac.oauthService.GetOrganizationRepositories(c.Request.Context(), claims.GitHubToken, orgName)
+	repositories, err := ac.oauthService.GetOrganizationRepositories(c.Request.Context(), token.AccessToken, orgName)
 	if err != nil {
 		log.Printf("ERROR - Failed to fetch repositories: %v", err)
 		utils.InternalServerErrorResponse(c, "Failed to fetch repositories", err)
@@ -215,7 +267,6 @@ func (ac *AuthController) GetOrganizationRepositories(c *gin.Context) {
 	}
 
 	utils.SuccessResponse(c, http.StatusOK, "Repositories fetched successfully", gin.H{
-		"user":             claims.Username,
 		"organization":     orgName,
 		"repositories":     repositories,
 		"repository_count": len(repositories),
@@ -225,31 +276,33 @@ func (ac *AuthController) GetOrganizationRepositories(c *gin.Context) {
 // GetUserRepositories returns all repositories accessible to the authenticated user from their organizations
 // GET /api/auth/repositories
 func (ac *AuthController) GetUserRepositories(c *gin.Context) {
-	// Get the authorization header
-	authHeader := c.GetHeader("Authorization")
-	if authHeader == "" {
-		utils.UnauthorizedResponse(c, "Authorization header is required")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.UnauthorizedResponse(c, "User not found in context")
 		return
 	}
 
-	// Extract token from header
-	tokenString, err := utils.ExtractTokenFromHeader(authHeader)
+	userUUID, err := uuid.Parse(userID.(string))
 	if err != nil {
-		utils.UnauthorizedResponse(c, "Invalid authorization header format")
+		utils.InternalServerErrorResponse(c, "Invalid user ID format", err)
 		return
 	}
 
-	// Validate JWT token
-	claims, err := utils.ValidateToken(tokenString)
+	// Fetch token from database
+	token, err := ac.tokenRepository.FindByUserID(userUUID)
 	if err != nil {
-		utils.UnauthorizedResponse(c, "Invalid or expired token")
+		utils.InternalServerErrorResponse(c, "Failed to fetch access token", err)
+		return
+	}
+	if token == nil {
+		utils.UnauthorizedResponse(c, "Access token not found. Please login again.")
 		return
 	}
 
-	log.Printf("DEBUG - Fetching all accessible repositories for user: %s", claims.Username)
+	log.Printf("DEBUG - Fetching all accessible repositories for user: %s", userUUID)
 
 	// Get repositories from all organizations
-	repositoriesByOrg, err := ac.oauthService.GetUserRepositories(c.Request.Context(), claims.GitHubToken)
+	repositoriesByOrg, err := ac.oauthService.GetUserRepositories(c.Request.Context(), token.AccessToken)
 	if err != nil {
 		log.Printf("ERROR - Failed to fetch repositories: %v", err)
 		utils.InternalServerErrorResponse(c, "Failed to fetch repositories", err)
@@ -257,7 +310,6 @@ func (ac *AuthController) GetUserRepositories(c *gin.Context) {
 	}
 
 	utils.SuccessResponse(c, http.StatusOK, "Repositories fetched successfully", gin.H{
-		"user":                claims.Username,
 		"repositories_by_org": repositoriesByOrg,
 		"organization_count":  len(repositoriesByOrg),
 	})

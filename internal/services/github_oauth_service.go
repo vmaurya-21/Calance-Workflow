@@ -340,14 +340,28 @@ func (s *GitHubOAuthService) GetUserRepositories(ctx context.Context, accessToke
 
 // ConvertToUser converts GitHubUser to models.User
 func (s *GitHubOAuthService) ConvertToUser(githubUser *GitHubUser) *models.User {
-	return &models.User{
+	user := &models.User{
 		GitHubID:  githubUser.ID,
 		Username:  githubUser.Login,
-		Email:     githubUser.Email,
 		AvatarURL: githubUser.AvatarURL,
-		Name:      githubUser.Name,
-		Bio:       githubUser.Bio,
-		Location:  githubUser.Location,
-		Company:   githubUser.Company,
 	}
+
+	// Convert empty strings to nil pointers for optional fields
+	if githubUser.Email != "" {
+		user.Email = &githubUser.Email
+	}
+	if githubUser.Name != "" {
+		user.Name = &githubUser.Name
+	}
+	if githubUser.Bio != "" {
+		user.Bio = &githubUser.Bio
+	}
+	if githubUser.Location != "" {
+		user.Location = &githubUser.Location
+	}
+	if githubUser.Company != "" {
+		user.Company = &githubUser.Company
+	}
+
+	return user
 }

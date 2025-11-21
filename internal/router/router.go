@@ -5,14 +5,13 @@ import (
 	"github.com/vmaurya-21/Calance-Workflow/internal/config"
 	"github.com/vmaurya-21/Calance-Workflow/internal/controllers"
 	"github.com/vmaurya-21/Calance-Workflow/internal/middleware"
-
-	// "github.com/vmaurya-21/Calance-Workflow/internal/repositories"
+	"github.com/vmaurya-21/Calance-Workflow/internal/repositories"
 	"github.com/vmaurya-21/Calance-Workflow/internal/services"
-	// "gorm.io/gorm"
+	"gorm.io/gorm"
 )
 
 // SetupRouter configures all routes for the application
-func SetupRouter(db interface{}, cfg *config.Config) *gin.Engine {
+func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	// Set Gin mode
 	gin.SetMode(cfg.Server.GinMode)
 
@@ -22,14 +21,15 @@ func SetupRouter(db interface{}, cfg *config.Config) *gin.Engine {
 	// Apply CORS middleware
 	r.Use(middleware.CORSMiddleware(cfg.Frontend.AllowedOrigins))
 
-	// TODO: Initialize repositories
-	// userRepo := repositories.NewUserRepository(db)
+	// Initialize repositories
+	userRepo := repositories.NewUserRepository(db)
+	tokenRepo := repositories.NewTokenRepository(db)
 
 	// Initialize services
 	githubOAuthService := services.NewGitHubOAuthService(cfg)
 
 	// Initialize controllers
-	authController := controllers.NewAuthController(githubOAuthService, nil, cfg)
+	authController := controllers.NewAuthController(githubOAuthService, userRepo, tokenRepo, cfg)
 
 	// Health check route
 	r.GET("/ping", func(c *gin.Context) {
@@ -48,16 +48,16 @@ func SetupRouter(db interface{}, cfg *config.Config) *gin.Engine {
 			auth.GET("/github", authController.GitHubLogin)
 			auth.GET("/github/callback", authController.GitHubCallback)
 
-			// TODO: Protected auth routes (database required)
-			// auth.GET("/me", middleware.AuthMiddleware(), authController.GetCurrentUser)
-			// auth.POST("/logout", middleware.AuthMiddleware(), authController.Logout)
+			// Protected auth routes (database required)
+			auth.GET("/me", middleware.AuthMiddleware(), authController.GetCurrentUser)
+			auth.POST("/logout", middleware.AuthMiddleware(), authController.Logout)
 
 			// Organizations endpoint (requires valid JWT)
-			auth.GET("/organizations", authController.GetUserOrganizations)
+			auth.GET("/organizations", middleware.AuthMiddleware(), authController.GetUserOrganizations)
 
 			// Repository endpoints (requires valid JWT)
-			auth.GET("/repositories", authController.GetUserRepositories)
-			auth.GET("/organizations/:org/repositories", authController.GetOrganizationRepositories)
+			auth.GET("/repositories", middleware.AuthMiddleware(), authController.GetUserRepositories)
+			auth.GET("/organizations/:org/repositories", middleware.AuthMiddleware(), authController.GetOrganizationRepositories)
 		}
 
 		// Protected API routes example
