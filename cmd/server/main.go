@@ -8,7 +8,7 @@ import (
 	"syscall"
 
 	"github.com/vmaurya-21/Calance-Workflow/internal/config"
-	// "github.com/vmaurya-21/Calance-Workflow/internal/database"
+	"github.com/vmaurya-21/Calance-Workflow/internal/database"
 	"github.com/vmaurya-21/Calance-Workflow/internal/router"
 )
 
@@ -25,14 +25,19 @@ func main() {
 	log.Printf("DEBUG - GitHub ClientID: %s", cfg.GitHub.ClientID)
 	log.Printf("DEBUG - GitHub RedirectURL: %s", cfg.GitHub.RedirectURL)
 
-	// TODO: Initialize database
-	// if err := database.InitDatabase(cfg); err != nil {
-	// 	log.Fatalf("Failed to initialize database: %v", err)
-	// }
-	// log.Println("Database initialized successfully")
+	// Debug: Log database connection details
+	log.Printf("DEBUG - DB Connection: host=%s port=%s user=%s dbname=%s",
+		cfg.Database.Host, cfg.Database.Port, cfg.Database.User, cfg.Database.DBName)
+	log.Printf("DEBUG - Full DSN: %s", cfg.GetDatabaseDSN())
+
+	// Initialize database
+	if err := database.InitDatabase(cfg); err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	log.Println("Database initialized successfully")
 
 	// Set up router
-	r := router.SetupRouter(nil, cfg)
+	r := router.SetupRouter(database.GetDB(), cfg)
 	log.Println("Router configured successfully")
 
 	// Graceful shutdown
@@ -52,10 +57,10 @@ func main() {
 	<-quit
 	log.Println("Shutting down server...")
 
-	// TODO: Close database connection
-	// if err := database.CloseDatabase(); err != nil {
-	// 	log.Printf("Error closing database: %v", err)
-	// }
+	// Close database connection
+	if err := database.CloseDatabase(); err != nil {
+		log.Printf("Error closing database: %v", err)
+	}
 
 	log.Println("Server stopped")
 }

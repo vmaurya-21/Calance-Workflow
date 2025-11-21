@@ -44,8 +44,12 @@ func InitDatabase(cfg *config.Config) error {
 func runMigrations() error {
 	log.Println("Running database migrations...")
 
+	// GORM AutoMigrate for development convenience
+	// For production, use golang-migrate CLI tool with SQL migration files in db/migrations/
+	// Example: migrate -path db/migrations -database "postgresql://user:pass@host:port/dbname?sslmode=disable" up
 	err := DB.AutoMigrate(
 		&models.User{},
+		&models.Token{},
 		// Add other models here as needed
 	)
 
