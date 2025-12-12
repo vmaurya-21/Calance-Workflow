@@ -33,7 +33,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	// Initialize controllers
 	authController := controllers.NewAuthController(githubOAuthService, userRepo, tokenRepo, cfg)
 	organizationController := controllers.NewOrganizationController(githubOrganizationService, tokenRepo)
-	repositoryController := controllers.NewRepositoryController(githubRepositoryService, tokenRepo)
+	repositoryController := controllers.NewRepositoryController(githubRepositoryService, tokenRepo, userRepo)
 
 	// Health check route
 	r.GET("/ping", func(c *gin.Context) {
@@ -82,6 +82,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			repositories.GET("", organizationController.GetUserRepositories)
 			repositories.GET("/:owner/:repo/branches", repositoryController.GetRepositoryBranches)
 			repositories.GET("/:owner/:repo/branches/:branch/commits", repositoryController.GetBranchCommits)
+			repositories.POST("/tags", repositoryController.CreateTag)
 		}
 
 		// Protected API routes example
