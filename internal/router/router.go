@@ -27,9 +27,13 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 
 	// Initialize services
 	githubOAuthService := services.NewGitHubOAuthService(cfg)
+	githubRepositoryService := services.NewGitHubRepositoryService()
+	githubOrganizationService := services.NewGitHubOrganizationService(githubRepositoryService)
 
 	// Initialize controllers
 	authController := controllers.NewAuthController(githubOAuthService, userRepo, tokenRepo, cfg)
+	organizationController := controllers.NewOrganizationController(githubOrganizationService, tokenRepo)
+	repositoryController := controllers.NewRepositoryController(githubRepositoryService, tokenRepo)
 
 	// Health check route
 	r.GET("/ping", func(c *gin.Context) {
@@ -42,22 +46,42 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	// API routes
 	api := r.Group("/api")
 	{
-		// Auth routes (public)
+		// Auth routes
 		auth := api.Group("/auth")
 		{
+			// Public auth routes
 			auth.GET("/github", authController.GitHubLogin)
 			auth.GET("/github/callback", authController.GitHubCallback)
 
-			// Protected auth routes (database required)
+			// Protected auth routes
 			auth.GET("/me", middleware.AuthMiddleware(), authController.GetCurrentUser)
 			auth.POST("/logout", middleware.AuthMiddleware(), authController.Logout)
 
-			// Organizations endpoint (requires valid JWT)
-			auth.GET("/organizations", middleware.AuthMiddleware(), authController.GetUserOrganizations)
+			// Organization endpoints (requires valid JWT)
+			auth.GET("/organizations", middleware.AuthMiddleware(), organizationController.GetUserOrganizations)
+			auth.GET("/organizations/:org/repositories", middleware.AuthMiddleware(), organizationController.GetOrganizationRepositories)
 
 			// Repository endpoints (requires valid JWT)
-			auth.GET("/repositories", middleware.AuthMiddleware(), authController.GetUserRepositories)
-			auth.GET("/organizations/:org/repositories", middleware.AuthMiddleware(), authController.GetOrganizationRepositories)
+			auth.GET("/repositories", middleware.AuthMiddleware(), organizationController.GetUserRepositories)
+			auth.GET("/repositories/:owner/:repo/branches", middleware.AuthMiddleware(), repositoryController.GetRepositoryBranches)
+			auth.GET("/repositories/:owner/:repo/branches/:branch/commits", middleware.AuthMiddleware(), repositoryController.GetBranchCommits)
+		}
+
+		// Organization routes (protected)
+		organizations := api.Group("/organizations")
+		organizations.Use(middleware.AuthMiddleware())
+		{
+			organizations.GET("", organizationController.GetUserOrganizations)
+			organizations.GET("/:org/repositories", organizationController.GetOrganizationRepositories)
+		}
+
+		// Repository routes (protected)
+		repositories := api.Group("/repositories")
+		repositories.Use(middleware.AuthMiddleware())
+		{
+			repositories.GET("", organizationController.GetUserRepositories)
+			repositories.GET("/:owner/:repo/branches", repositoryController.GetRepositoryBranches)
+			repositories.GET("/:owner/:repo/branches/:branch/commits", repositoryController.GetBranchCommits)
 		}
 
 		// Protected API routes example

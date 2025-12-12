@@ -68,3 +68,12 @@ func NotFoundResponse(c *gin.Context, message string) {
 func InternalServerErrorResponse(c *gin.Context, message string, err error) {
 	ErrorResponse(c, http.StatusInternalServerError, message, err)
 }
+
+// BadRequestResponse sends a bad request error response
+func BadRequestResponse(c *gin.Context, message string) {
+	c.JSON(http.StatusBadRequest, Response{
+		Success: false,
+		Message: message,
+		Error:   "Bad request",
+	})
+}
