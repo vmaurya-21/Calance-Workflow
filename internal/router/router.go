@@ -82,6 +82,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			repositories.GET("", organizationController.GetUserRepositories)
 			repositories.GET("/:owner/:repo/branches", repositoryController.GetRepositoryBranches)
 			repositories.GET("/:owner/:repo/branches/:branch/commits", repositoryController.GetBranchCommits)
+			repositories.GET("/:owner/:repo/tags", repositoryController.GetRepositoryTags)
 			repositories.POST("/tags", repositoryController.CreateTag)
 		}
 

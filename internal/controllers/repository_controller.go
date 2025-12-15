@@ -240,3 +240,58 @@ func (rc *RepositoryController) CreateTag(c *gin.Context) {
 		"url":        reference.URL,
 	})
 }
+
+// GetRepositoryTags returns all tags for a specific repository
+// GET /api/repositories/:owner/:repo/tags
+func (rc *RepositoryController) GetRepositoryTags(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.UnauthorizedResponse(c, "User not found in context")
+		return
+	}
+
+	userUUID, err := uuid.Parse(userID.(string))
+	if err != nil {
+		utils.InternalServerErrorResponse(c, "Invalid user ID format", err)
+		return
+	}
+
+	// Get owner and repo from URL parameters
+	owner := c.Param("owner")
+	repo := c.Param("repo")
+
+	if owner == "" || repo == "" {
+		utils.BadRequestResponse(c, "Owner and repository name are required")
+		return
+	}
+
+	// Fetch token from database
+	token, err := rc.tokenRepository.FindByUserID(userUUID)
+	if err != nil {
+		utils.InternalServerErrorResponse(c, "Failed to fetch access token", err)
+		return
+	}
+	if token == nil {
+		utils.UnauthorizedResponse(c, "Access token not found. Please login again.")
+		return
+	}
+
+	log.Printf("DEBUG - Fetching tags for repository: %s/%s", owner, repo)
+
+	// Get tags from GitHub API
+	tags, err := rc.repositoryService.GetRepositoryTags(c.Request.Context(), token.AccessToken, owner, repo)
+	if err != nil {
+		log.Printf("ERROR - Failed to fetch tags: %v", err)
+		utils.InternalServerErrorResponse(c, "Failed to fetch repository tags", err)
+		return
+	}
+
+	log.Printf("DEBUG - Successfully retrieved %d tags for repository %s/%s", len(tags), owner, repo)
+
+	utils.SuccessResponse(c, http.StatusOK, fmt.Sprintf("Successfully retrieved %d tags", len(tags)), gin.H{
+		"owner":      owner,
+		"repository": repo,
+		"tags":       tags,
+		"count":      len(tags),
+	})
+}

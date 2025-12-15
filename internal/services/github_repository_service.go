@@ -85,11 +85,23 @@ type GitHubCommit struct {
 	Parents []GitHubCommitRef `json:"parents"`
 }
 
-// GitHubTag represents a Git tag
+// GitHubTag represents a Git tag from GitHub API (for listing tags)
 type GitHubTag struct {
-	Tag     string `json:"tag"`
+	Name       string `json:"name"`
+	ZipballURL string `json:"zipball_url"`
+	TarballURL string `json:"tarball_url"`
+	Commit     struct {
+		SHA string `json:"sha"`
+		URL string `json:"url"`
+	} `json:"commit"`
+	NodeID string `json:"node_id"`
+}
+
+// GitHubTagObject represents a Git tag object from GitHub API (for creating tags)
+type GitHubTagObject struct {
 	SHA     string `json:"sha"`
 	URL     string `json:"url"`
+	Tag     string `json:"tag"`
 	Message string `json:"message"`
 	Tagger  struct {
 		Name  string    `json:"name"`
@@ -316,6 +328,51 @@ func (s *GitHubRepositoryService) GetBranchCommits(ctx context.Context, accessTo
 	return commits, nil
 }
 
+// GetRepositoryTags fetches all tags for a repository
+func (s *GitHubRepositoryService) GetRepositoryTags(ctx context.Context, accessToken, owner, repo string) ([]GitHubTag, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	log.Printf("DEBUG - Fetching tags for repository: %s/%s", owner, repo)
+
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/tags", owner, repo)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		log.Printf("ERROR - Failed to create request: %v", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Add authorization header with access token
+	req.Header.Set("Authorization", fmt.Sprintf("token %s", accessToken))
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("ERROR - Failed to fetch tags: %v", err)
+		return nil, fmt.Errorf("failed to fetch tags: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("ERROR - Tags endpoint returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var tags []GitHubTag
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+		log.Printf("ERROR - Failed to decode tags: %v", err)
+		return nil, fmt.Errorf("failed to decode tags: %w", err)
+	}
+
+	log.Printf("DEBUG - Successfully fetched %d tags for repository %s/%s", len(tags), owner, repo)
+	return tags, nil
+}
+
 // CreateTag creates and pushes a tag for a specific commit
 func (s *GitHubRepositoryService) CreateTag(ctx context.Context, accessToken string, owner string, req CreateTagRequest) (*GitHubReference, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -427,7 +484,7 @@ func (s *GitHubRepositoryService) createAnnotatedTag(ctx context.Context, client
 		return nil, fmt.Errorf("GitHub API returned status %d: %s", tagResp.StatusCode, string(body))
 	}
 
-	var tagObj GitHubTag
+	var tagObj GitHubTagObject
 	if err := json.NewDecoder(tagResp.Body).Decode(&tagObj); err != nil {
 		log.Printf("ERROR - Failed to decode tag object: %v", err)
 		return nil, fmt.Errorf("failed to decode tag object: %w", err)
