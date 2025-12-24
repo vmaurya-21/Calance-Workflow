@@ -139,6 +139,88 @@ type CreateTagRequest struct {
 	TaggerEmail string `json:"tagger_email"`
 }
 
+// GitHubWorkflowRun represents a GitHub Actions workflow run
+type GitHubWorkflowRun struct {
+	ID           int64     `json:"id"`
+	Name         string    `json:"name"`
+	DisplayTitle string    `json:"display_title"`
+	Status       string    `json:"status"`     // queued, in_progress, completed
+	Conclusion   string    `json:"conclusion"` // success, failure, cancelled, skipped, timed_out, action_required
+	HeadBranch   string    `json:"head_branch"`
+	HeadSHA      string    `json:"head_sha"`
+	RunNumber    int       `json:"run_number"`
+	Event        string    `json:"event"` // push, pull_request, workflow_dispatch, etc.
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	RunStartedAt time.Time `json:"run_started_at"`
+	HTMLURL      string    `json:"html_url"`
+	Actor        struct {
+		Login     string `json:"login"`
+		ID        int64  `json:"id"`
+		AvatarURL string `json:"avatar_url"`
+	} `json:"actor"`
+	WorkflowID int64  `json:"workflow_id"`
+	Path       string `json:"path"` // Path to workflow file
+}
+
+// GitHubWorkflowRunDetail represents detailed workflow run information
+type GitHubWorkflowRunDetail struct {
+	ID           int64     `json:"id"`
+	Name         string    `json:"name"`
+	DisplayTitle string    `json:"display_title"`
+	Status       string    `json:"status"`
+	Conclusion   string    `json:"conclusion"`
+	HeadBranch   string    `json:"head_branch"`
+	HeadSHA      string    `json:"head_sha"`
+	RunNumber    int       `json:"run_number"`
+	Event        string    `json:"event"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	RunStartedAt time.Time `json:"run_started_at"`
+	HTMLURL      string    `json:"html_url"`
+	Actor        struct {
+		Login     string `json:"login"`
+		ID        int64  `json:"id"`
+		AvatarURL string `json:"avatar_url"`
+	} `json:"actor"`
+	WorkflowID int64  `json:"workflow_id"`
+	Path       string `json:"path"`
+}
+
+// GitHubWorkflowJob represents a job within a workflow run
+type GitHubWorkflowJob struct {
+	ID          int64                `json:"id"`
+	RunID       int64                `json:"run_id"`
+	Name        string               `json:"name"`
+	Status      string               `json:"status"`
+	Conclusion  string               `json:"conclusion"`
+	StartedAt   time.Time            `json:"started_at"`
+	CompletedAt time.Time            `json:"completed_at"`
+	Steps       []GitHubWorkflowStep `json:"steps"`
+}
+
+// GitHubWorkflowStep represents a step within a job
+type GitHubWorkflowStep struct {
+	Name        string    `json:"name"`
+	Status      string    `json:"status"`
+	Conclusion  string    `json:"conclusion"`
+	Number      int       `json:"number"`
+	StartedAt   time.Time `json:"started_at"`
+	CompletedAt time.Time `json:"completed_at"`
+}
+
+// GitHubWorkflowRunsResponse represents the response from GitHub Actions runs API
+type GitHubWorkflowRunsResponse struct {
+	TotalCount   int                 `json:"total_count"`
+	WorkflowRuns []GitHubWorkflowRun `json:"workflow_runs"`
+}
+
+// GitHubWorkflowJobsResponse represents the response from GitHub Actions jobs API
+type GitHubWorkflowJobsResponse struct {
+	TotalCount int                 `json:"total_count"`
+	Jobs       []GitHubWorkflowJob `json:"jobs"`
+}
+
 // GitHubRepositoryService handles GitHub repository operations
 type GitHubRepositoryService struct{}
 
@@ -577,4 +659,130 @@ func (s *GitHubRepositoryService) verifyCommit(ctx context.Context, client *http
 
 	log.Printf("DEBUG - Commit %s verified successfully", commitSHA)
 	return nil
+}
+
+// GetRepositoryWorkflowRuns fetches workflow runs for a specific repository
+func (s *GitHubRepositoryService) GetRepositoryWorkflowRuns(ctx context.Context, accessToken, owner, repo string, perPage int) ([]GitHubWorkflowRun, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	if perPage <= 0 || perPage > 100 {
+		perPage = 30 // Default to 30
+	}
+
+	log.Printf("DEBUG - Fetching %d workflow runs for repository: %s/%s", perPage, owner, repo)
+
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs?per_page=%d&page=1", owner, repo, perPage)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		log.Printf("ERROR - Failed to create request: %v", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Add authorization header with access token
+	req.Header.Set("Authorization", fmt.Sprintf("token %s", accessToken))
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("ERROR - Failed to fetch workflow runs: %v", err)
+		return nil, fmt.Errorf("failed to fetch workflow runs: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("ERROR - Workflow runs endpoint returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var runsResponse GitHubWorkflowRunsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&runsResponse); err != nil {
+		log.Printf("ERROR - Failed to decode workflow runs: %v", err)
+		return nil, fmt.Errorf("failed to decode workflow runs: %w", err)
+	}
+
+	log.Printf("DEBUG - Successfully fetched %d workflow runs (total: %d)", len(runsResponse.WorkflowRuns), runsResponse.TotalCount)
+	return runsResponse.WorkflowRuns, nil
+}
+
+// GetWorkflowRunDetail fetches detailed information about a specific workflow run including jobs
+func (s *GitHubRepositoryService) GetWorkflowRunDetail(ctx context.Context, accessToken, owner, repo string, runID int64) (*GitHubWorkflowRunDetail, []GitHubWorkflowJob, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	log.Printf("DEBUG - Fetching workflow run detail for run ID %d in repository: %s/%s", runID, owner, repo)
+
+	// Fetch workflow run details
+	runURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs/%d", owner, repo, runID)
+	runReq, err := http.NewRequestWithContext(ctx, "GET", runURL, nil)
+	if err != nil {
+		log.Printf("ERROR - Failed to create run detail request: %v", err)
+		return nil, nil, fmt.Errorf("failed to create run detail request: %w", err)
+	}
+
+	runReq.Header.Set("Authorization", fmt.Sprintf("token %s", accessToken))
+	runReq.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	runResp, err := client.Do(runReq)
+	if err != nil {
+		log.Printf("ERROR - Failed to fetch workflow run detail: %v", err)
+		return nil, nil, fmt.Errorf("failed to fetch workflow run detail: %w", err)
+	}
+	defer runResp.Body.Close()
+
+	if runResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(runResp.Body)
+		log.Printf("ERROR - Workflow run detail endpoint returned status %d: %s", runResp.StatusCode, string(body))
+		return nil, nil, fmt.Errorf("GitHub API returned status %d: %s", runResp.StatusCode, string(body))
+	}
+
+	var runDetail GitHubWorkflowRunDetail
+	if err := json.NewDecoder(runResp.Body).Decode(&runDetail); err != nil {
+		log.Printf("ERROR - Failed to decode workflow run detail: %v", err)
+		return nil, nil, fmt.Errorf("failed to decode workflow run detail: %w", err)
+	}
+
+	log.Printf("DEBUG - Successfully fetched workflow run detail for run ID %d", runID)
+
+	// Fetch jobs for this workflow run
+	jobsURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs/%d/jobs", owner, repo, runID)
+	jobsReq, err := http.NewRequestWithContext(ctx, "GET", jobsURL, nil)
+	if err != nil {
+		log.Printf("ERROR - Failed to create jobs request: %v", err)
+		return &runDetail, nil, fmt.Errorf("failed to create jobs request: %w", err)
+	}
+
+	jobsReq.Header.Set("Authorization", fmt.Sprintf("token %s", accessToken))
+	jobsReq.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	jobsResp, err := client.Do(jobsReq)
+	if err != nil {
+		log.Printf("ERROR - Failed to fetch workflow jobs: %v", err)
+		return &runDetail, nil, fmt.Errorf("failed to fetch workflow jobs: %w", err)
+	}
+	defer jobsResp.Body.Close()
+
+	if jobsResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(jobsResp.Body)
+		log.Printf("ERROR - Workflow jobs endpoint returned status %d: %s", jobsResp.StatusCode, string(body))
+		return &runDetail, nil, fmt.Errorf("GitHub API returned status %d: %s", jobsResp.StatusCode, string(body))
+	}
+
+	var jobsResponse GitHubWorkflowJobsResponse
+	if err := json.NewDecoder(jobsResp.Body).Decode(&jobsResponse); err != nil {
+		log.Printf("ERROR - Failed to decode workflow jobs: %v", err)
+		return &runDetail, nil, fmt.Errorf("failed to decode workflow jobs: %w", err)
+	}
+
+	log.Printf("DEBUG - Successfully fetched %d jobs for workflow run %d", len(jobsResponse.Jobs), runID)
+	return &runDetail, jobsResponse.Jobs, nil
 }

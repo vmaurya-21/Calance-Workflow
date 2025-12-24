@@ -84,6 +84,10 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			repositories.GET("/:owner/:repo/branches/:branch/commits", repositoryController.GetBranchCommits)
 			repositories.GET("/:owner/:repo/tags", repositoryController.GetRepositoryTags)
 			repositories.POST("/tags", repositoryController.CreateTag)
+
+			// GitHub Actions workflow runs endpoints
+			repositories.GET("/:owner/:repo/actions/runs", repositoryController.GetRepositoryWorkflowRuns)
+			repositories.GET("/:owner/:repo/actions/runs/:run_id", repositoryController.GetWorkflowRunDetail)
 		}
 
 		// Protected API routes example

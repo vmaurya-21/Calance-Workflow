@@ -295,3 +295,133 @@ func (rc *RepositoryController) GetRepositoryTags(c *gin.Context) {
 		"count":      len(tags),
 	})
 }
+
+// GetRepositoryWorkflowRuns returns workflow runs for a specific repository
+// GET /api/repositories/:owner/:repo/actions/runs
+func (rc *RepositoryController) GetRepositoryWorkflowRuns(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.UnauthorizedResponse(c, "User not found in context")
+		return
+	}
+
+	userUUID, err := uuid.Parse(userID.(string))
+	if err != nil {
+		utils.InternalServerErrorResponse(c, "Invalid user ID format", err)
+		return
+	}
+
+	// Get owner and repo from URL parameters
+	owner := c.Param("owner")
+	repo := c.Param("repo")
+
+	if owner == "" || repo == "" {
+		utils.BadRequestResponse(c, "Owner and repository name are required")
+		return
+	}
+
+	// Get per_page query parameter, default to 30
+	perPage := 30
+	if perPageStr := c.Query("per_page"); perPageStr != "" {
+		var parsed int
+		if _, err := fmt.Sscanf(perPageStr, "%d", &parsed); err == nil {
+			if parsed > 0 && parsed <= 100 {
+				perPage = parsed
+			}
+		}
+	}
+
+	// Fetch token from database
+	token, err := rc.tokenRepository.FindByUserID(userUUID)
+	if err != nil {
+		utils.InternalServerErrorResponse(c, "Failed to fetch access token", err)
+		return
+	}
+	if token == nil {
+		utils.UnauthorizedResponse(c, "Access token not found. Please login again.")
+		return
+	}
+
+	log.Printf("DEBUG - Fetching %d workflow runs for repository: %s/%s", perPage, owner, repo)
+
+	// Get workflow runs for the repository
+	runs, err := rc.repositoryService.GetRepositoryWorkflowRuns(c.Request.Context(), token.AccessToken, owner, repo, perPage)
+	if err != nil {
+		log.Printf("ERROR - Failed to fetch workflow runs: %v", err)
+		utils.InternalServerErrorResponse(c, "Failed to fetch workflow runs", err)
+		return
+	}
+
+	log.Printf("DEBUG - Successfully fetched %d workflow runs for repository %s/%s", len(runs), owner, repo)
+
+	utils.SuccessResponse(c, http.StatusOK, "Workflow runs fetched successfully", gin.H{
+		"owner":      owner,
+		"repository": repo,
+		"runs":       runs,
+		"run_count":  len(runs),
+	})
+}
+
+// GetWorkflowRunDetail returns detailed information about a specific workflow run
+// GET /api/repositories/:owner/:repo/actions/runs/:run_id
+func (rc *RepositoryController) GetWorkflowRunDetail(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.UnauthorizedResponse(c, "User not found in context")
+		return
+	}
+
+	userUUID, err := uuid.Parse(userID.(string))
+	if err != nil {
+		utils.InternalServerErrorResponse(c, "Invalid user ID format", err)
+		return
+	}
+
+	// Get owner, repo, and run_id from URL parameters
+	owner := c.Param("owner")
+	repo := c.Param("repo")
+	runIDStr := c.Param("run_id")
+
+	if owner == "" || repo == "" || runIDStr == "" {
+		utils.BadRequestResponse(c, "Owner, repository name, and run ID are required")
+		return
+	}
+
+	// Parse run ID
+	var runID int64
+	if _, err := fmt.Sscanf(runIDStr, "%d", &runID); err != nil {
+		utils.BadRequestResponse(c, "Invalid run ID format")
+		return
+	}
+
+	// Fetch token from database
+	token, err := rc.tokenRepository.FindByUserID(userUUID)
+	if err != nil {
+		utils.InternalServerErrorResponse(c, "Failed to fetch access token", err)
+		return
+	}
+	if token == nil {
+		utils.UnauthorizedResponse(c, "Access token not found. Please login again.")
+		return
+	}
+
+	log.Printf("DEBUG - Fetching workflow run detail for run ID %d in repository: %s/%s", runID, owner, repo)
+
+	// Get workflow run detail and jobs
+	runDetail, jobs, err := rc.repositoryService.GetWorkflowRunDetail(c.Request.Context(), token.AccessToken, owner, repo, runID)
+	if err != nil {
+		log.Printf("ERROR - Failed to fetch workflow run detail: %v", err)
+		utils.InternalServerErrorResponse(c, "Failed to fetch workflow run detail", err)
+		return
+	}
+
+	log.Printf("DEBUG - Successfully fetched workflow run detail with %d jobs", len(jobs))
+
+	utils.SuccessResponse(c, http.StatusOK, "Workflow run detail fetched successfully", gin.H{
+		"owner":      owner,
+		"repository": repo,
+		"run":        runDetail,
+		"jobs":       jobs,
+		"job_count":  len(jobs),
+	})
+}
