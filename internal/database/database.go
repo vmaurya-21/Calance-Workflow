@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/vmaurya-21/Calance-Workflow/internal/config"
+	"github.com/vmaurya-21/Calance-Workflow/internal/domain/auth"
 	"github.com/vmaurya-21/Calance-Workflow/internal/logger"
-	"github.com/vmaurya-21/Calance-Workflow/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -48,8 +48,8 @@ func runMigrations() error {
 	// For production, use golang-migrate CLI tool with SQL migration files in db/migrations/
 	// Example: migrate -path db/migrations -database "postgresql://user:pass@host:port/dbname?sslmode=disable" up
 	err := DB.AutoMigrate(
-		&models.User{},
-		&models.Token{},
+		&auth.User{},
+		&auth.Token{},
 		// Add other models here as needed
 	)
 
