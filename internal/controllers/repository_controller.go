@@ -425,3 +425,67 @@ func (rc *RepositoryController) GetWorkflowRunDetail(c *gin.Context) {
 		"job_count":  len(jobs),
 	})
 }
+
+// GetStepLogs returns ALL logs for a job in a single response
+// GET /api/repositories/:owner/:repo/actions/jobs/:job_id/logs
+func (rc *RepositoryController) GetStepLogs(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.UnauthorizedResponse(c, "User not found in context")
+		return
+	}
+
+	userUUID, err := uuid.Parse(userID.(string))
+	if err != nil {
+		utils.InternalServerErrorResponse(c, "Invalid user ID format", err)
+		return
+	}
+
+	// Get parameters from URL
+	owner := c.Param("owner")
+	repo := c.Param("repo")
+	jobIDStr := c.Param("job_id")
+
+	if owner == "" || repo == "" || jobIDStr == "" {
+		utils.BadRequestResponse(c, "Owner, repository, and job ID are required")
+		return
+	}
+
+	// Parse job ID
+	var jobID int64
+	if _, err := fmt.Sscanf(jobIDStr, "%d", &jobID); err != nil {
+		utils.BadRequestResponse(c, "Invalid job ID format")
+		return
+	}
+
+	// Fetch token from database
+	token, err := rc.tokenRepository.FindByUserID(userUUID)
+	if err != nil {
+		utils.InternalServerErrorResponse(c, "Failed to fetch access token", err)
+		return
+	}
+	if token == nil {
+		utils.UnauthorizedResponse(c, "Access token not found. Please login again.")
+		return
+	}
+
+	log.Printf("DEBUG - Fetching complete job logs for job %d in repository: %s/%s", jobID, owner, repo)
+
+	// Get complete job logs in a single API call
+	logs, err := rc.repositoryService.GetJobLogs(c.Request.Context(), token.AccessToken, owner, repo, jobID)
+	if err != nil {
+		log.Printf("ERROR - Failed to fetch job logs: %v", err)
+		utils.InternalServerErrorResponse(c, "Failed to fetch job logs", err)
+		return
+	}
+
+	log.Printf("DEBUG - Successfully fetched complete job logs (size: %d bytes)", len(logs))
+
+	utils.SuccessResponse(c, http.StatusOK, "Job logs fetched successfully", gin.H{
+		"owner":      owner,
+		"repository": repo,
+		"job_id":     jobID,
+		"logs":       logs,
+		"size_bytes": len(logs),
+	})
+}

@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
 	"github.com/vmaurya-21/Calance-Workflow/internal/config"
+	"github.com/vmaurya-21/Calance-Workflow/internal/logger"
 	"github.com/vmaurya-21/Calance-Workflow/internal/models"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
@@ -50,9 +50,11 @@ func NewGitHubOAuthService(cfg *config.Config) *GitHubOAuthService {
 // GetAuthURL returns the GitHub OAuth authorization URL
 func (s *GitHubOAuthService) GetAuthURL(state string) string {
 	authURL := s.config.AuthCodeURL(state, oauth2.AccessTypeOnline)
-	log.Printf("DEBUG - Generated Auth URL: %s", authURL)
-	log.Printf("DEBUG - OAuth Config ClientID: %s", s.config.ClientID)
-	log.Printf("DEBUG - OAuth Config RedirectURL: %s", s.config.RedirectURL)
+	logger.Debug().
+		Str("auth_url", authURL).
+		Str("client_id", s.config.ClientID).
+		Str("redirect_url", s.config.RedirectURL).
+		Msg("Generated OAuth authorization URL")
 	return authURL
 }
 
@@ -73,39 +75,39 @@ func (s *GitHubOAuthService) GetGitHubUser(ctx context.Context, token *oauth2.To
 
 	client := s.config.Client(ctx, token)
 
-	log.Printf("DEBUG - Fetching user info from GitHub API with token: %v", token.AccessToken[:20]+"...")
+	logger.Debug().Str("token_prefix", token.AccessToken[:20]+"...").Msg("Fetching user info from GitHub API")
 
 	// Fetch user data from GitHub API
 	resp, err := client.Get("https://api.github.com/user")
 	if err != nil {
-		log.Printf("ERROR - GitHub API request failed: %v (type: %T)", err, err)
+		logger.Error().Err(err).Msg("GitHub API request failed")
 		return nil, fmt.Errorf("failed to get user info: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("ERROR - GitHub API returned status %d: %s", resp.StatusCode, string(body))
+		logger.Error().Int("status_code", resp.StatusCode).Str("response", string(body)).Msg("GitHub API returned error status")
 		return nil, fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var githubUser GitHubUser
 	if err := json.NewDecoder(resp.Body).Decode(&githubUser); err != nil {
-		log.Printf("ERROR - Failed to decode GitHub user response: %v", err)
+		logger.Error().Err(err).Msg("Failed to decode GitHub user response")
 		return nil, fmt.Errorf("failed to decode user info: %w", err)
 	}
 
-	log.Printf("DEBUG - Successfully fetched GitHub user: %s (ID: %d)", githubUser.Login, githubUser.ID)
+	logger.Debug().Str("login", githubUser.Login).Int64("id", githubUser.ID).Msg("Successfully fetched GitHub user")
 
 	// If email is not public, fetch it from emails endpoint
 	if githubUser.Email == "" {
-		log.Printf("DEBUG - Email not public, fetching from emails endpoint")
+		logger.Debug().Msg("Email not public, fetching from emails endpoint")
 		email, err := s.getPrimaryEmail(client)
 		if err == nil {
 			githubUser.Email = email
-			log.Printf("DEBUG - Fetched email: %s", githubUser.Email)
+			logger.Debug().Str("email", githubUser.Email).Msg("Fetched email")
 		} else {
-			log.Printf("WARNING - Could not fetch email: %v", err)
+			logger.Warn().Err(err).Msg("Could not fetch email")
 		}
 	}
 
@@ -114,16 +116,16 @@ func (s *GitHubOAuthService) GetGitHubUser(ctx context.Context, token *oauth2.To
 
 // getPrimaryEmail fetches the user's primary email from GitHub
 func (s *GitHubOAuthService) getPrimaryEmail(client *http.Client) (string, error) {
-	log.Printf("DEBUG - Fetching emails from GitHub API")
+	logger.Debug().Msg("Fetching emails from GitHub API")
 	resp, err := client.Get("https://api.github.com/user/emails")
 	if err != nil {
-		log.Printf("ERROR - Failed to fetch emails: %v", err)
+		logger.Error().Err(err).Msg("Failed to fetch emails")
 		return "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("ERROR - Emails endpoint returned status %d", resp.StatusCode)
+		logger.Error().Int("status_code", resp.StatusCode).Msg("Emails endpoint returned error status")
 		return "", fmt.Errorf("failed to fetch emails: status %d", resp.StatusCode)
 	}
 

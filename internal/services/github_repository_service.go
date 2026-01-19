@@ -6,9 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
+
+	"github.com/vmaurya-21/Calance-Workflow/internal/logger"
 )
 
 // GitHubRepository represents a GitHub repository
@@ -207,6 +208,7 @@ type GitHubWorkflowStep struct {
 	Number      int       `json:"number"`
 	StartedAt   time.Time `json:"started_at"`
 	CompletedAt time.Time `json:"completed_at"`
+	Logs        string    `json:"logs,omitempty"` // Step logs
 }
 
 // GitHubWorkflowRunsResponse represents the response from GitHub Actions runs API
@@ -238,7 +240,7 @@ func (s *GitHubRepositoryService) GetOrganizationRepositories(ctx context.Contex
 		Timeout: 10 * time.Second,
 	}
 
-	log.Printf("DEBUG - Fetching repositories for organization: %s", orgName)
+	logger.Debug().Str("organization", orgName).Msg("Fetching repositories")
 
 	var allRepos []GitHubRepository
 	page := 1
@@ -248,7 +250,7 @@ func (s *GitHubRepositoryService) GetOrganizationRepositories(ctx context.Contex
 		url := fmt.Sprintf("https://api.github.com/orgs/%s/repos?page=%d&per_page=%d&type=all&visibility=all", orgName, page, perPage)
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
-			log.Printf("ERROR - Failed to create request: %v", err)
+			logger.Error().Err(err).Msg("Failed to create request")
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
 
@@ -258,21 +260,21 @@ func (s *GitHubRepositoryService) GetOrganizationRepositories(ctx context.Contex
 
 		resp, err := client.Do(req)
 		if err != nil {
-			log.Printf("ERROR - Failed to fetch repositories: %v", err)
+			logger.Error().Err(err).Msg("Failed to fetch repositories")
 			return nil, fmt.Errorf("failed to fetch repositories: %w", err)
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			log.Printf("ERROR - Repositories endpoint returned status %d: %s", resp.StatusCode, string(body))
+			logger.Error().Int("status_code", resp.StatusCode).Str("response", string(body)).Msg("Repositories endpoint returned error")
 			return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
 		}
 
 		var repos []GitHubRepository
 		if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
 			resp.Body.Close()
-			log.Printf("ERROR - Failed to decode repositories: %v", err)
+			logger.Error().Err(err).Msg("Failed to decode repositories")
 			return nil, fmt.Errorf("failed to decode repositories: %w", err)
 		}
 		resp.Body.Close()
@@ -285,7 +287,7 @@ func (s *GitHubRepositoryService) GetOrganizationRepositories(ctx context.Contex
 		page++
 	}
 
-	log.Printf("DEBUG - Successfully fetched %d repositories for organization %s", len(allRepos), orgName)
+	logger.Debug().Int("count", len(allRepos)).Str("organization", orgName).Msg("Successfully fetched repositories")
 	return allRepos, nil
 }
 
@@ -298,7 +300,7 @@ func (s *GitHubRepositoryService) GetRepositoryBranches(ctx context.Context, acc
 		Timeout: 10 * time.Second,
 	}
 
-	log.Printf("DEBUG - Fetching branches for repository: %s/%s", owner, repo)
+	logger.Debug().Str("owner", owner).Str("repo", repo).Msg("Fetching branches")
 
 	var allBranches []GitHubBranch
 	page := 1
@@ -308,7 +310,7 @@ func (s *GitHubRepositoryService) GetRepositoryBranches(ctx context.Context, acc
 		url := fmt.Sprintf("https://api.github.com/repos/%s/%s/branches?page=%d&per_page=%d", owner, repo, page, perPage)
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
-			log.Printf("ERROR - Failed to create request: %v", err)
+			logger.Error().Err(err).Msg("Failed to create request")
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
 
@@ -318,21 +320,21 @@ func (s *GitHubRepositoryService) GetRepositoryBranches(ctx context.Context, acc
 
 		resp, err := client.Do(req)
 		if err != nil {
-			log.Printf("ERROR - Failed to fetch branches: %v", err)
+			logger.Error().Err(err).Msg("Failed to fetch branches")
 			return nil, fmt.Errorf("failed to fetch branches: %w", err)
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			log.Printf("ERROR - Branches endpoint returned status %d: %s", resp.StatusCode, string(body))
+			logger.Error().Int("status_code", resp.StatusCode).Str("response", string(body)).Msg("Branches endpoint returned error")
 			return nil, fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
 		}
 
 		var branches []GitHubBranch
 		if err := json.NewDecoder(resp.Body).Decode(&branches); err != nil {
 			resp.Body.Close()
-			log.Printf("ERROR - Failed to decode branches: %v", err)
+			logger.Error().Err(err).Msg("Failed to decode branches")
 			return nil, fmt.Errorf("failed to decode branches: %w", err)
 		}
 		resp.Body.Close()
@@ -351,7 +353,7 @@ func (s *GitHubRepositoryService) GetRepositoryBranches(ctx context.Context, acc
 		page++
 	}
 
-	log.Printf("DEBUG - Successfully fetched %d branches for repository %s/%s", len(allBranches), owner, repo)
+	logger.Debug().Int("count", len(allBranches)).Str("owner", owner).Str("repo", repo).Msg("Successfully fetched branches")
 	return allBranches, nil
 }
 
@@ -368,12 +370,12 @@ func (s *GitHubRepositoryService) GetBranchCommits(ctx context.Context, accessTo
 		perPage = 30 // Default to 30
 	}
 
-	log.Printf("DEBUG - Fetching %d commits for branch %s in repository: %s/%s", perPage, branch, owner, repo)
+	logger.Debug().Int("per_page", perPage).Str("branch", branch).Str("owner", owner).Str("repo", repo).Msg("Fetching commits")
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/commits?sha=%s&per_page=%d&page=1", owner, repo, branch, perPage)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		log.Printf("ERROR - Failed to create request: %v", err)
+		logger.Error().Err(err).Msg("Failed to create request")
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -383,7 +385,7 @@ func (s *GitHubRepositoryService) GetBranchCommits(ctx context.Context, accessTo
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("ERROR - Failed to fetch commits: %v", err)
+		logger.Error().Err(err).Msg("Failed to fetch commits")
 		return nil, fmt.Errorf("failed to fetch commits: %w", err)
 	}
 	defer resp.Body.Close()
@@ -393,20 +395,20 @@ func (s *GitHubRepositoryService) GetBranchCommits(ctx context.Context, accessTo
 
 		// Handle empty repository (409 Conflict)
 		if resp.StatusCode == http.StatusConflict {
-			log.Printf("INFO - Repository %s/%s branch %s is empty (no commits yet)", owner, repo, branch)
+			logger.Info().Str("owner", owner).Str("repo", repo).Str("branch", branch).Msg("Repository branch is empty")
 			return []GitHubCommit{}, nil // Return empty array instead of error
 		}
-		log.Printf("ERROR - Commits endpoint returned status %d: %s", resp.StatusCode, string(body))
+		logger.Error().Int("status_code", resp.StatusCode).Str("response", string(body)).Msg("Commits endpoint returned error")
 		return nil, fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var commits []GitHubCommit
 	if err := json.NewDecoder(resp.Body).Decode(&commits); err != nil {
-		log.Printf("ERROR - Failed to decode commits: %v", err)
+		logger.Error().Err(err).Msg("Failed to decode commits")
 		return nil, fmt.Errorf("failed to decode commits: %w", err)
 	}
 
-	log.Printf("DEBUG - Successfully fetched %d commits for branch %s", len(commits), branch)
+	logger.Debug().Int("count", len(commits)).Str("branch", branch).Msg("Successfully fetched commits")
 	return commits, nil
 }
 
@@ -419,12 +421,12 @@ func (s *GitHubRepositoryService) GetRepositoryTags(ctx context.Context, accessT
 		Timeout: 10 * time.Second,
 	}
 
-	log.Printf("DEBUG - Fetching tags for repository: %s/%s", owner, repo)
+	logger.Debug().Str("owner", owner).Str("repo", repo).Msg("Fetching tags")
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/tags", owner, repo)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		log.Printf("ERROR - Failed to create request: %v", err)
+		logger.Error().Err(err).Msg("Failed to create request")
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -434,25 +436,136 @@ func (s *GitHubRepositoryService) GetRepositoryTags(ctx context.Context, accessT
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("ERROR - Failed to fetch tags: %v", err)
+		logger.Error().Err(err).Msg("Failed to fetch tags")
 		return nil, fmt.Errorf("failed to fetch tags: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("ERROR - Tags endpoint returned status %d: %s", resp.StatusCode, string(body))
+		logger.Error().Int("status_code", resp.StatusCode).Str("response", string(body)).Msg("Tags endpoint returned error")
 		return nil, fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var tags []GitHubTag
 	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
-		log.Printf("ERROR - Failed to decode tags: %v", err)
+		logger.Error().Err(err).Msg("Failed to decode tags")
 		return nil, fmt.Errorf("failed to decode tags: %w", err)
 	}
 
-	log.Printf("DEBUG - Successfully fetched %d tags for repository %s/%s", len(tags), owner, repo)
+	logger.Debug().Int("count", len(tags)).Str("owner", owner).Str("repo", repo).Msg("Successfully fetched tags")
 	return tags, nil
+}
+
+// GetWorkflowRunDetail fetches detailed information for a specific workflow run, including jobs and their logs.
+func (s *GitHubRepositoryService) GetWorkflowRunDetail(ctx context.Context, accessToken, owner, repo string, runID int64) (*GitHubWorkflowRunDetail, []GitHubWorkflowJob, error) {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second) // Increased timeout for logs
+	defer cancel()
+
+	client := &http.Client{
+		Timeout: 30 * time.Second, // Increased client timeout
+	}
+
+	// 1. Fetch workflow run details
+	runURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs/%d", owner, repo, runID)
+	req, err := http.NewRequestWithContext(ctx, "GET", runURL, nil)
+	if err != nil {
+		logger.Error().Int64("run_id", runID).Err(err).Msg("Failed to create request for workflow run")
+		return nil, nil, fmt.Errorf("failed to create request for workflow run: %w", err)
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("token %s", accessToken))
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		logger.Error().Int64("run_id", runID).Err(err).Msg("Failed to fetch workflow run")
+		return nil, nil, fmt.Errorf("failed to fetch workflow run: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		logger.Error().Int("status_code", resp.StatusCode).Int64("run_id", runID).Str("response", string(body)).Msg("Workflow run endpoint returned error")
+		return nil, nil, fmt.Errorf("GitHub API returned status %d for workflow run %d: %s", resp.StatusCode, runID, string(body))
+	}
+
+	var runDetail GitHubWorkflowRunDetail
+	if err := json.NewDecoder(resp.Body).Decode(&runDetail); err != nil {
+		logger.Error().Int64("run_id", runID).Err(err).Msg("Failed to decode workflow run")
+		return nil, nil, fmt.Errorf("failed to decode workflow run: %w", err)
+	}
+	logger.Debug().Int64("run_id", runID).Msg("Successfully fetched workflow run details")
+
+	// 2. Fetch jobs for the workflow run
+	jobsURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs/%d/jobs?per_page=100", owner, repo, runID)
+	req, err = http.NewRequestWithContext(ctx, "GET", jobsURL, nil)
+	if err != nil {
+		logger.Error().Int64("run_id", runID).Err(err).Msg("Failed to create request for jobs")
+		return nil, nil, fmt.Errorf("failed to create request for workflow jobs: %w", err)
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("token %s", accessToken))
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err = client.Do(req)
+	if err != nil {
+		logger.Error().Int64("run_id", runID).Err(err).Msg("Failed to fetch jobs")
+		return nil, nil, fmt.Errorf("failed to fetch workflow jobs: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		logger.Error().Int("status_code", resp.StatusCode).Int64("run_id", runID).Str("response", string(body)).Msg("Workflow jobs endpoint returned error")
+		return nil, nil, fmt.Errorf("GitHub API returned status %d for workflow jobs of run %d: %s", resp.StatusCode, runID, string(body))
+	}
+
+	var jobsResponse GitHubWorkflowJobsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&jobsResponse); err != nil {
+		logger.Error().Int64("run_id", runID).Err(err).Msg("Failed to decode jobs")
+		return nil, nil, fmt.Errorf("failed to decode workflow jobs: %w", err)
+	}
+	logger.Debug().Int("count", len(jobsResponse.Jobs)).Int64("run_id", runID).Msg("Successfully fetched jobs")
+	return &runDetail, jobsResponse.Jobs, nil
+}
+
+// GetJobLogs fetches ALL logs for a job in a single response
+func (s *GitHubRepositoryService) GetJobLogs(ctx context.Context, accessToken, owner, repo string, jobID int64) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	logger.Debug().Int64("job_id", jobID).Str("owner", owner).Str("repo", repo).Msg("Fetching complete job logs")
+
+	// GitHub API endpoint for complete job logs
+	logsURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/jobs/%d/logs", owner, repo, jobID)
+	req, err := http.NewRequestWithContext(ctx, "GET", logsURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request for job logs: %w", err)
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("token %s", accessToken))
+	req.Header.Set("Accept", "application/vnd.github.v3.raw")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch job logs: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("GitHub API returned status %d for job logs: %s", resp.StatusCode, string(body))
+	}
+
+	logs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read job logs: %w", err)
+	}
+
+	logger.Debug().Int64("job_id", jobID).Int("bytes", len(logs)).Msg("Successfully fetched complete job logs")
+	return string(logs), nil
 }
 
 // CreateTag creates and pushes a tag for a specific commit
@@ -469,11 +582,11 @@ func (s *GitHubRepositoryService) CreateTag(ctx context.Context, accessToken str
 		req.TagType = "annotated"
 	}
 
-	log.Printf("DEBUG - Creating %s tag '%s' for commit %s in %s/%s", req.TagType, req.TagName, req.CommitSHA, owner, req.Repo)
+	logger.Debug().Str("tag_type", req.TagType).Str("tag_name", req.TagName).Str("commit_sha", req.CommitSHA).Str("owner", owner).Str("repo", req.Repo).Msg("Creating tag")
 
 	// Verify the commit exists
 	if err := s.verifyCommit(ctx, client, accessToken, owner, req.Repo, req.CommitSHA); err != nil {
-		log.Printf("ERROR - Commit verification failed: %v", err)
+		logger.Error().Err(err).Msg("Commit verification failed")
 		return nil, fmt.Errorf("commit verification failed: %w", err)
 	}
 
@@ -490,7 +603,7 @@ func (s *GitHubRepositoryService) CreateTag(ctx context.Context, accessToken str
 		return nil, err
 	}
 
-	log.Printf("DEBUG - Successfully created tag '%s' at ref %s", req.TagName, refResponse.Ref)
+	logger.Debug().Str("tag_name", req.TagName).Str("ref", refResponse.Ref).Msg("Successfully created tag")
 	return refResponse, nil
 }
 
@@ -522,12 +635,12 @@ func (s *GitHubRepositoryService) createAnnotatedTag(ctx context.Context, client
 
 	tagBody, err := json.Marshal(tagPayload)
 	if err != nil {
-		log.Printf("ERROR - Failed to marshal tag payload: %v", err)
+		logger.Error().Err(err).Msg("Failed to marshal tag payload")
 		return nil, fmt.Errorf("failed to marshal tag payload: %w", err)
 	}
 
-	log.Printf("DEBUG - Creating tag object at URL: %s", tagURL)
-	log.Printf("DEBUG - Tag payload: %s", string(tagBody))
+	logger.Debug().Str("url", tagURL).Msg("Creating tag object")
+	logger.Debug().Str("payload", string(tagBody)).Msg("Tag payload")
 
 	// First verify repository exists and is accessible
 	repoCheckURL := fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, req.Repo)
@@ -539,10 +652,10 @@ func (s *GitHubRepositoryService) createAnnotatedTag(ctx context.Context, client
 		defer repoResp.Body.Close()
 		if repoResp.StatusCode != http.StatusOK {
 			repoBody, _ := io.ReadAll(repoResp.Body)
-			log.Printf("ERROR - Repository check failed with status %d: %s", repoResp.StatusCode, string(repoBody))
+			logger.Error().Int("status_code", repoResp.StatusCode).Str("response", string(repoBody)).Msg("Repository check failed")
 			return nil, fmt.Errorf("cannot access repository %s/%s (status %d). Make sure the OAuth app has access to this repository/organization", owner, req.Repo, repoResp.StatusCode)
 		}
-		log.Printf("DEBUG - Repository %s/%s is accessible", owner, req.Repo)
+		logger.Debug().Str("owner", owner).Str("repo", req.Repo).Msg("Repository is accessible")
 	}
 
 	tagReq, err := http.NewRequestWithContext(ctx, "POST", tagURL, bytes.NewReader(tagBody))
@@ -555,20 +668,20 @@ func (s *GitHubRepositoryService) createAnnotatedTag(ctx context.Context, client
 
 	tagResp, err := client.Do(tagReq)
 	if err != nil {
-		log.Printf("ERROR - Failed to create tag object: %v", err)
+		logger.Error().Err(err).Msg("Failed to create tag object")
 		return nil, fmt.Errorf("failed to create tag object: %w", err)
 	}
 	defer tagResp.Body.Close()
 
 	if tagResp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(tagResp.Body)
-		log.Printf("ERROR - Tag creation returned status %d: %s", tagResp.StatusCode, string(body))
+		logger.Error().Int("status_code", tagResp.StatusCode).Str("response", string(body)).Msg("Tag creation returned error")
 		return nil, fmt.Errorf("GitHub API returned status %d: %s", tagResp.StatusCode, string(body))
 	}
 
 	var tagObj GitHubTagObject
 	if err := json.NewDecoder(tagResp.Body).Decode(&tagObj); err != nil {
-		log.Printf("ERROR - Failed to decode tag object: %v", err)
+		logger.Error().Err(err).Msg("Failed to decode tag object")
 		return nil, fmt.Errorf("failed to decode tag object: %w", err)
 	}
 
@@ -592,7 +705,7 @@ func (s *GitHubRepositoryService) createReference(ctx context.Context, client *h
 
 	refBody, err := json.Marshal(refPayload)
 	if err != nil {
-		log.Printf("ERROR - Failed to marshal reference payload: %v", err)
+		logger.Error().Err(err).Msg("Failed to marshal reference payload")
 		return nil, fmt.Errorf("failed to marshal reference payload: %w", err)
 	}
 
@@ -606,20 +719,20 @@ func (s *GitHubRepositoryService) createReference(ctx context.Context, client *h
 
 	refResp, err := client.Do(refReq)
 	if err != nil {
-		log.Printf("ERROR - Failed to create reference: %v", err)
+		logger.Error().Err(err).Msg("Failed to create reference")
 		return nil, fmt.Errorf("failed to create reference: %w", err)
 	}
 	defer refResp.Body.Close()
 
 	if refResp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(refResp.Body)
-		log.Printf("ERROR - Reference creation returned status %d: %s", refResp.StatusCode, string(body))
+		logger.Error().Int("status_code", refResp.StatusCode).Str("response", string(body)).Msg("Reference creation returned error")
 		return nil, fmt.Errorf("GitHub API returned status %d: %s", refResp.StatusCode, string(body))
 	}
 
 	var reference GitHubReference
 	if err := json.NewDecoder(refResp.Body).Decode(&reference); err != nil {
-		log.Printf("ERROR - Failed to decode reference: %v", err)
+		logger.Error().Err(err).Msg("Failed to decode reference")
 		return nil, fmt.Errorf("failed to decode reference: %w", err)
 	}
 
@@ -630,7 +743,7 @@ func (s *GitHubRepositoryService) createReference(ctx context.Context, client *h
 func (s *GitHubRepositoryService) verifyCommit(ctx context.Context, client *http.Client, accessToken, owner, repo, commitSHA string) error {
 	commitURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/git/commits/%s", owner, repo, commitSHA)
 
-	log.Printf("DEBUG - Verifying commit %s exists in %s/%s", commitSHA, owner, repo)
+	logger.Debug().Str("commit_sha", commitSHA).Str("owner", owner).Str("repo", repo).Msg("Verifying commit exists")
 
 	req, err := http.NewRequestWithContext(ctx, "GET", commitURL, nil)
 	if err != nil {
@@ -647,17 +760,17 @@ func (s *GitHubRepositoryService) verifyCommit(ctx context.Context, client *http
 
 	if resp.StatusCode == http.StatusNotFound {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("ERROR - Commit %s not found in %s/%s: %s", commitSHA, owner, repo, string(body))
+		logger.Error().Str("commit_sha", commitSHA).Str("owner", owner).Str("repo", repo).Str("response", string(body)).Msg("Commit not found in repository")
 		return fmt.Errorf("commit %s not found in repository %s/%s", commitSHA, owner, repo)
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("ERROR - Commit verification returned status %d: %s", resp.StatusCode, string(body))
+		logger.Error().Int("status_code", resp.StatusCode).Str("response", string(body)).Msg("Commit verification returned error status")
 		return fmt.Errorf("failed to verify commit, GitHub API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	log.Printf("DEBUG - Commit %s verified successfully", commitSHA)
+	logger.Debug().Str("commit_sha", commitSHA).Msg("Commit verified successfully")
 	return nil
 }
 
@@ -674,12 +787,12 @@ func (s *GitHubRepositoryService) GetRepositoryWorkflowRuns(ctx context.Context,
 		perPage = 30 // Default to 30
 	}
 
-	log.Printf("DEBUG - Fetching %d workflow runs for repository: %s/%s", perPage, owner, repo)
+	logger.Debug().Int("per_page", perPage).Str("owner", owner).Str("repo", repo).Msg("Fetching workflow runs")
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs?per_page=%d&page=1", owner, repo, perPage)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		log.Printf("ERROR - Failed to create request: %v", err)
+		logger.Error().Err(err).Msg("Failed to create request")
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -689,100 +802,23 @@ func (s *GitHubRepositoryService) GetRepositoryWorkflowRuns(ctx context.Context,
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("ERROR - Failed to fetch workflow runs: %v", err)
+		logger.Error().Err(err).Msg("Failed to fetch workflow runs")
 		return nil, fmt.Errorf("failed to fetch workflow runs: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("ERROR - Workflow runs endpoint returned status %d: %s", resp.StatusCode, string(body))
+		logger.Error().Int("status_code", resp.StatusCode).Str("response", string(body)).Msg("Workflow runs endpoint returned error")
 		return nil, fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var runsResponse GitHubWorkflowRunsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&runsResponse); err != nil {
-		log.Printf("ERROR - Failed to decode workflow runs: %v", err)
+		logger.Error().Err(err).Msg("Failed to decode workflow runs")
 		return nil, fmt.Errorf("failed to decode workflow runs: %w", err)
 	}
 
-	log.Printf("DEBUG - Successfully fetched %d workflow runs (total: %d)", len(runsResponse.WorkflowRuns), runsResponse.TotalCount)
+	logger.Debug().Int("count", len(runsResponse.WorkflowRuns)).Int("total", runsResponse.TotalCount).Msg("Successfully fetched workflow runs")
 	return runsResponse.WorkflowRuns, nil
-}
-
-// GetWorkflowRunDetail fetches detailed information about a specific workflow run including jobs
-func (s *GitHubRepositoryService) GetWorkflowRunDetail(ctx context.Context, accessToken, owner, repo string, runID int64) (*GitHubWorkflowRunDetail, []GitHubWorkflowJob, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	log.Printf("DEBUG - Fetching workflow run detail for run ID %d in repository: %s/%s", runID, owner, repo)
-
-	// Fetch workflow run details
-	runURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs/%d", owner, repo, runID)
-	runReq, err := http.NewRequestWithContext(ctx, "GET", runURL, nil)
-	if err != nil {
-		log.Printf("ERROR - Failed to create run detail request: %v", err)
-		return nil, nil, fmt.Errorf("failed to create run detail request: %w", err)
-	}
-
-	runReq.Header.Set("Authorization", fmt.Sprintf("token %s", accessToken))
-	runReq.Header.Set("Accept", "application/vnd.github.v3+json")
-
-	runResp, err := client.Do(runReq)
-	if err != nil {
-		log.Printf("ERROR - Failed to fetch workflow run detail: %v", err)
-		return nil, nil, fmt.Errorf("failed to fetch workflow run detail: %w", err)
-	}
-	defer runResp.Body.Close()
-
-	if runResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(runResp.Body)
-		log.Printf("ERROR - Workflow run detail endpoint returned status %d: %s", runResp.StatusCode, string(body))
-		return nil, nil, fmt.Errorf("GitHub API returned status %d: %s", runResp.StatusCode, string(body))
-	}
-
-	var runDetail GitHubWorkflowRunDetail
-	if err := json.NewDecoder(runResp.Body).Decode(&runDetail); err != nil {
-		log.Printf("ERROR - Failed to decode workflow run detail: %v", err)
-		return nil, nil, fmt.Errorf("failed to decode workflow run detail: %w", err)
-	}
-
-	log.Printf("DEBUG - Successfully fetched workflow run detail for run ID %d", runID)
-
-	// Fetch jobs for this workflow run
-	jobsURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs/%d/jobs", owner, repo, runID)
-	jobsReq, err := http.NewRequestWithContext(ctx, "GET", jobsURL, nil)
-	if err != nil {
-		log.Printf("ERROR - Failed to create jobs request: %v", err)
-		return &runDetail, nil, fmt.Errorf("failed to create jobs request: %w", err)
-	}
-
-	jobsReq.Header.Set("Authorization", fmt.Sprintf("token %s", accessToken))
-	jobsReq.Header.Set("Accept", "application/vnd.github.v3+json")
-
-	jobsResp, err := client.Do(jobsReq)
-	if err != nil {
-		log.Printf("ERROR - Failed to fetch workflow jobs: %v", err)
-		return &runDetail, nil, fmt.Errorf("failed to fetch workflow jobs: %w", err)
-	}
-	defer jobsResp.Body.Close()
-
-	if jobsResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(jobsResp.Body)
-		log.Printf("ERROR - Workflow jobs endpoint returned status %d: %s", jobsResp.StatusCode, string(body))
-		return &runDetail, nil, fmt.Errorf("GitHub API returned status %d: %s", jobsResp.StatusCode, string(body))
-	}
-
-	var jobsResponse GitHubWorkflowJobsResponse
-	if err := json.NewDecoder(jobsResp.Body).Decode(&jobsResponse); err != nil {
-		log.Printf("ERROR - Failed to decode workflow jobs: %v", err)
-		return &runDetail, nil, fmt.Errorf("failed to decode workflow jobs: %w", err)
-	}
-
-	log.Printf("DEBUG - Successfully fetched %d jobs for workflow run %d", len(jobsResponse.Jobs), runID)
-	return &runDetail, jobsResponse.Jobs, nil
 }

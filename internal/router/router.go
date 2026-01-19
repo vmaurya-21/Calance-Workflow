@@ -4,9 +4,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/vmaurya-21/Calance-Workflow/internal/config"
 	"github.com/vmaurya-21/Calance-Workflow/internal/controllers"
+	"github.com/vmaurya-21/Calance-Workflow/internal/logger"
 	"github.com/vmaurya-21/Calance-Workflow/internal/middleware"
 	"github.com/vmaurya-21/Calance-Workflow/internal/repositories"
 	"github.com/vmaurya-21/Calance-Workflow/internal/services"
+	"github.com/vmaurya-21/Calance-Workflow/internal/workflow"
 	"gorm.io/gorm"
 )
 
@@ -17,6 +19,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 
 	// Create router
 	r := gin.Default()
+
+	// Apply logging middleware
+	r.Use(logger.GinMiddleware())
 
 	// Apply CORS middleware
 	r.Use(middleware.CORSMiddleware(cfg.Frontend.AllowedOrigins))
@@ -29,11 +34,13 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	githubOAuthService := services.NewGitHubOAuthService(cfg)
 	githubRepositoryService := services.NewGitHubRepositoryService()
 	githubOrganizationService := services.NewGitHubOrganizationService(githubRepositoryService)
+	workflowService := workflow.NewWorkflowService()
 
 	// Initialize controllers
 	authController := controllers.NewAuthController(githubOAuthService, userRepo, tokenRepo, cfg)
 	organizationController := controllers.NewOrganizationController(githubOrganizationService, tokenRepo)
 	repositoryController := controllers.NewRepositoryController(githubRepositoryService, tokenRepo, userRepo)
+	workflowController := workflow.NewWorkflowController(workflowService, tokenRepo)
 
 	// Health check route
 	r.GET("/ping", func(c *gin.Context) {
@@ -88,6 +95,18 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			// GitHub Actions workflow runs endpoints
 			repositories.GET("/:owner/:repo/actions/runs", repositoryController.GetRepositoryWorkflowRuns)
 			repositories.GET("/:owner/:repo/actions/runs/:run_id", repositoryController.GetWorkflowRunDetail)
+
+			// GitHub Actions job logs endpoint (returns all logs for a job)
+			repositories.GET("/:owner/:repo/actions/jobs/:job_id/logs", repositoryController.GetStepLogs)
+		}
+
+		// Workflow routes (protected)
+		workflows := api.Group("/workflows")
+		workflows.Use(middleware.AuthMiddleware())
+		{
+			workflows.GET("/:owner/:repo", workflowController.GetWorkflows)
+			workflows.POST("/create", workflowController.CreateWorkflow)
+			workflows.POST("/preview", workflowController.PreviewWorkflow)
 		}
 
 		// Protected API routes example

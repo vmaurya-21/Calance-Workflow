@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/vmaurya-21/Calance-Workflow/internal/config"
 	"github.com/vmaurya-21/Calance-Workflow/internal/database"
+	"github.com/vmaurya-21/Calance-Workflow/internal/logger"
 	"github.com/vmaurya-21/Calance-Workflow/internal/router"
 )
 
@@ -16,29 +16,38 @@ func main() {
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		// Use fmt for pre-logger errors
+		fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
+		os.Exit(1)
 	}
 
-	log.Println("Configuration loaded successfully")
+	// Initialize logger
+	logger.InitLogger(cfg.Log.Level, cfg.Log.Format)
+	logger.Info().Msg("Configuration loaded successfully")
 
 	// Debug: Log GitHub config
-	log.Printf("DEBUG - GitHub ClientID: %s", cfg.GitHub.ClientID)
-	log.Printf("DEBUG - GitHub RedirectURL: %s", cfg.GitHub.RedirectURL)
+	logger.Debug().
+		Str("client_id", cfg.GitHub.ClientID).
+		Str("redirect_url", cfg.GitHub.RedirectURL).
+		Msg("GitHub configuration")
 
 	// Debug: Log database connection details
-	log.Printf("DEBUG - DB Connection: host=%s port=%s user=%s dbname=%s",
-		cfg.Database.Host, cfg.Database.Port, cfg.Database.User, cfg.Database.DBName)
-	log.Printf("DEBUG - Full DSN: %s", cfg.GetDatabaseDSN())
+	logger.Debug().
+		Str("host", cfg.Database.Host).
+		Str("port", cfg.Database.Port).
+		Str("user", cfg.Database.User).
+		Str("dbname", cfg.Database.DBName).
+		Msg("Database connection details")
 
 	// Initialize database
 	if err := database.InitDatabase(cfg); err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		logger.Fatal().Err(err).Msg("Failed to initialize database")
 	}
-	log.Println("Database initialized successfully")
+	logger.Info().Msg("Database initialized successfully")
 
 	// Set up router
 	r := router.SetupRouter(database.GetDB(), cfg)
-	log.Println("Router configured successfully")
+	logger.Info().Msg("Router configured successfully")
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
@@ -47,20 +56,20 @@ func main() {
 	// Start server in goroutine
 	go func() {
 		addr := fmt.Sprintf(":%s", cfg.Server.Port)
-		log.Printf("Starting server on %s", addr)
+		logger.Info().Str("address", addr).Msg("Starting server")
 		if err := r.Run(addr); err != nil {
-			log.Fatalf("Failed to start server: %v", err)
+			logger.Fatal().Err(err).Msg("Failed to start server")
 		}
 	}()
 
 	// Wait for interrupt signal
 	<-quit
-	log.Println("Shutting down server...")
+	logger.Info().Msg("Shutting down server...")
 
 	// Close database connection
 	if err := database.CloseDatabase(); err != nil {
-		log.Printf("Error closing database: %v", err)
+		logger.Error().Err(err).Msg("Error closing database")
 	}
 
-	log.Println("Server stopped")
+	logger.Info().Msg("Server stopped")
 }

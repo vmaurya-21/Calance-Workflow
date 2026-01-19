@@ -2,13 +2,13 @@ package database
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/vmaurya-21/Calance-Workflow/internal/config"
+	"github.com/vmaurya-21/Calance-Workflow/internal/logger"
 	"github.com/vmaurya-21/Calance-Workflow/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 var DB *gorm.DB
@@ -21,7 +21,7 @@ func InitDatabase(cfg *config.Config) error {
 
 	// Configure GORM logger
 	gormConfig := &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: gormlogger.Default.LogMode(gormlogger.Info),
 	}
 
 	// Connect to database
@@ -30,7 +30,7 @@ func InitDatabase(cfg *config.Config) error {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	log.Println("Database connection established successfully")
+	logger.Info().Msg("Database connection established successfully")
 
 	// Run migrations
 	if err := runMigrations(); err != nil {
@@ -42,7 +42,7 @@ func InitDatabase(cfg *config.Config) error {
 
 // runMigrations runs database migrations
 func runMigrations() error {
-	log.Println("Running database migrations...")
+	logger.Info().Msg("Running database migrations...")
 
 	// GORM AutoMigrate for development convenience
 	// For production, use golang-migrate CLI tool with SQL migration files in db/migrations/
@@ -57,7 +57,7 @@ func runMigrations() error {
 		return err
 	}
 
-	log.Println("Database migrations completed successfully")
+	logger.Info().Msg("Database migrations completed successfully")
 	return nil
 }
 

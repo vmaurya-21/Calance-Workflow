@@ -16,6 +16,7 @@ type Config struct {
 	GitHub   GitHubConfig
 	JWT      JWTConfig
 	Frontend FrontendConfig
+	Log      LogConfig
 }
 
 type ServerConfig struct {
@@ -47,6 +48,11 @@ type JWTConfig struct {
 type FrontendConfig struct {
 	URL            string
 	AllowedOrigins []string
+}
+
+type LogConfig struct {
+	Level  string
+	Format string
 }
 
 var AppConfig *Config
@@ -84,6 +90,10 @@ func LoadConfig() (*Config, error) {
 		Frontend: FrontendConfig{
 			URL:            getEnv("FRONTEND_URL", "http://localhost:3000"),
 			AllowedOrigins: getEnvAsSlice("ALLOWED_ORIGINS", []string{"http://localhost:3000"}),
+		},
+		Log: LogConfig{
+			Level:  getEnv("LOG_LEVEL", "info"),
+			Format: getEnv("LOG_FORMAT", "json"),
 		},
 	}
 
