@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -120,7 +121,7 @@ func (ac *AuthController) GitHubCallback(c *gin.Context) {
 		UserID:      savedUser.ID,
 		AccessToken: token.AccessToken,
 		TokenType:   token.TokenType,
-		Scope:       "user:email,read:user,read:org,repo", // Default scopes
+		Scope:       "user:email,read:user,read:org,repo,workflow", // Scopes including workflow
 		ExpiresAt:   &expiry,
 	}
 
@@ -179,6 +180,61 @@ func (ac *AuthController) GetCurrentUser(c *gin.Context) {
 func (ac *AuthController) Logout(c *gin.Context) {
 	// JWT is stateless, so logout is handled client-side by removing the token
 	utils.SuccessResponse(c, http.StatusOK, "Logged out successfully", nil)
+}
+
+// CheckTokenScopes checks what scopes the current GitHub token has
+// GET /api/auth/check-scopes
+func (ac *AuthController) CheckTokenScopes(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.UnauthorizedResponse(c, "User not found in context")
+		return
+	}
+
+	userUUID, err := uuid.Parse(userID.(string))
+	if err != nil {
+		utils.InternalServerErrorResponse(c, "Invalid user ID format", err)
+		return
+	}
+
+	// Fetch token from database
+	token, err := ac.tokenRepository.FindByUserID(userUUID)
+	if err != nil {
+		utils.InternalServerErrorResponse(c, "Failed to fetch access token", err)
+		return
+	}
+	if token == nil {
+		utils.ErrorResponse(c, http.StatusNotFound, "Access token not found", nil)
+		return
+	}
+
+	// Make a request to GitHub API to check scopes
+	req, err := http.NewRequest("GET", "https://api.github.com/user", nil)
+	if err != nil {
+		utils.InternalServerErrorResponse(c, "Failed to create request", err)
+		return
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		utils.InternalServerErrorResponse(c, "Failed to check token scopes", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Get scopes from response header
+	scopes := resp.Header.Get("X-OAuth-Scopes")
+
+	utils.SuccessResponse(c, http.StatusOK, "Token scopes retrieved", gin.H{
+		"scopes":          scopes,
+		"has_workflow":    strings.Contains(scopes, "workflow"),
+		"stored_scope":    token.Scope,
+		"response_status": resp.StatusCode,
+	})
 }
 
 // generateRandomState generates a random state string for CSRF protection

@@ -38,7 +38,7 @@ func NewGitHubOAuthService(cfg *config.Config) *GitHubOAuthService {
 		ClientID:     cfg.GitHub.ClientID,
 		ClientSecret: cfg.GitHub.ClientSecret,
 		RedirectURL:  cfg.GitHub.RedirectURL,
-		Scopes:       []string{"user:email", "read:user", "read:org", "repo"},
+		Scopes:       []string{"user:email", "read:user", "read:org", "repo", "workflow"},
 		Endpoint:     github.Endpoint,
 	}
 

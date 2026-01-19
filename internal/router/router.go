@@ -63,6 +63,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			// Protected auth routes
 			auth.GET("/me", middleware.AuthMiddleware(), authController.GetCurrentUser)
 			auth.POST("/logout", middleware.AuthMiddleware(), authController.Logout)
+			auth.GET("/check-scopes", middleware.AuthMiddleware(), authController.CheckTokenScopes)
 
 			// Organization endpoints (requires valid JWT)
 			auth.GET("/organizations", middleware.AuthMiddleware(), organizationController.GetUserOrganizations)

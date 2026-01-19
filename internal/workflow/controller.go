@@ -3,6 +3,7 @@ package workflow
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -152,14 +153,19 @@ func (wc *WorkflowController) CreateWorkflow(c *gin.Context) {
 		// Handle specific errors
 		statusCode := http.StatusInternalServerError
 		message := "Failed to create workflow file"
+		errMsg := err.Error()
 
-		switch err {
-		case ErrInsufficientPermissions:
+		// Check for specific error types
+		if err == ErrInsufficientPermissions {
 			statusCode = http.StatusForbidden
 			message = "Insufficient permissions to create workflow. Ensure your GitHub token has 'workflow' scope."
-		case ErrWorkflowAlreadyExists:
+		} else if err == ErrWorkflowAlreadyExists {
 			statusCode = http.StatusConflict
 			message = "Workflow file already exists"
+		} else if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "Not Found") {
+			// GitHub returns 404 for both missing repos AND missing workflow permissions
+			statusCode = http.StatusNotFound
+			message = fmt.Sprintf("Repository '%s/%s' not found or your GitHub token lacks 'workflow' scope. Please verify: 1) The repository exists, 2) Your token has access to it, 3) Your token has 'workflow' scope enabled.", request.Owner, request.Repository)
 		}
 
 		c.JSON(statusCode, gin.H{

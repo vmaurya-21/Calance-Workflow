@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/vmaurya-21/Calance-Workflow/internal/logger"
 )
@@ -249,31 +250,64 @@ jobs:
 	return buf.String(), nil
 }
 
-// CreateWorkflowFile creates a workflow file in the GitHub repository
+// CreateWorkflowFile creates a workflow file in the GitHub repository via Pull Request
 func (s *WorkflowService) CreateWorkflowFile(ctx context.Context, token, owner, repo, workflowName, content string) (*WorkflowResponse, error) {
-	// Construct the file path
-	filePath := fmt.Sprintf(".github/workflows/%s.yml", workflowName)
+	// First, verify the repository exists
+	if err := s.verifyRepositoryExists(ctx, token, owner, repo); err != nil {
+		logger.Error().
+			Err(err).
+			Str("owner", owner).
+			Str("repo", repo).
+			Msg("Repository verification failed")
+		return nil, err
+	}
 
-	// Check if file already exists
-	exists, existingSHA, err := s.checkFileExists(ctx, token, owner, repo, filePath)
+	// Get the default branch
+	defaultBranch, err := s.getDefaultBranch(ctx, token, owner, repo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get default branch: %w", err)
+	}
+
+	// Create a unique branch name
+	branchName := fmt.Sprintf("workflow/%s-%d", workflowName, time.Now().Unix())
+
+	// Get the latest commit SHA from the default branch
+	baseSHA, err := s.getBranchSHA(ctx, token, owner, repo, defaultBranch)
 	if err != nil {
 		logger.Error().
 			Err(err).
-			Str("path", filePath).
-			Msg("Failed to check if workflow exists")
-		return nil, fmt.Errorf("%w: %v", ErrGitHubAPIFailed, err)
+			Str("owner", owner).
+			Str("repo", repo).
+			Str("branch", defaultBranch).
+			Msg("Failed to get base branch SHA - repository might be empty")
+		return nil, fmt.Errorf("failed to get base branch SHA (repository might be empty or have no commits): %w", err)
+	}
+	logger.Info().
+		Str("owner", owner).
+		Str("repo", repo).
+		Str("branch", defaultBranch).
+		Str("sha", baseSHA).
+		Msg("Retrieved base branch SHA")
+
+	// Create a new branch
+	if err := s.createBranch(ctx, token, owner, repo, branchName, baseSHA); err != nil {
+		return nil, fmt.Errorf("failed to create branch: %w", err)
 	}
 
-	// Prepare the request body
+	logger.Info().
+		Str("owner", owner).
+		Str("repo", repo).
+		Str("branch_name", branchName).
+		Msg("Branch created successfully")
+
+	// Construct the file path
+	filePath := fmt.Sprintf(".github/workflows/%s.yml", workflowName)
+
+	// Create the file on the new branch
 	requestBody := map[string]interface{}{
-		"message": fmt.Sprintf("Create workflow: %s", workflowName),
+		"message": fmt.Sprintf("Add workflow: %s", workflowName),
 		"content": encodeBase64(content),
-	}
-
-	// If file exists, include the SHA for update
-	if exists {
-		requestBody["message"] = fmt.Sprintf("Update workflow: %s", workflowName)
-		requestBody["sha"] = existingSHA
+		"branch":  branchName,
 	}
 
 	bodyBytes, err := json.Marshal(requestBody)
@@ -312,65 +346,56 @@ func (s *WorkflowService) CreateWorkflowFile(ctx context.Context, token, owner, 
 		logger.Error().
 			Int("status", resp.StatusCode).
 			Str("body", string(respBody)).
+			Str("owner", owner).
+			Str("repo", repo).
+			Str("file_path", filePath).
 			Msg("GitHub API returned error")
 
 		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 			return nil, ErrInsufficientPermissions
 		}
 
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("%w: repository '%s/%s' not found or you don't have access to it", ErrGitHubAPIFailed, owner, repo)
+		}
+
 		return nil, fmt.Errorf("%w: status %d, body: %s", ErrGitHubAPIFailed, resp.StatusCode, string(respBody))
 	}
 
-	// Parse response
-	var apiResponse struct {
-		Content struct {
-			Name        string `json:"name"`
-			Path        string `json:"path"`
-			SHA         string `json:"sha"`
-			HTMLURL     string `json:"html_url"`
-			DownloadURL string `json:"download_url"`
-		} `json:"content"`
-		Commit struct {
-			SHA string `json:"sha"`
-		} `json:"commit"`
-	}
-
-	if err := json.Unmarshal(respBody, &apiResponse); err != nil {
-		logger.Error().
-			Err(err).
-			Str("body", string(respBody)).
-			Msg("Failed to parse GitHub API response")
-		return nil, err
+	// Create a pull request
+	prURL, prNumber, err := s.createPullRequest(ctx, token, owner, repo, branchName, defaultBranch, workflowName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pull request: %w", err)
 	}
 
 	response := &WorkflowResponse{
 		Owner:        owner,
 		Repository:   repo,
 		WorkflowName: workflowName,
-		FilePath:     apiResponse.Content.Path,
-		FileURL:      apiResponse.Content.HTMLURL,
-		ContentSHA:   apiResponse.Content.SHA,
-		Message:      fmt.Sprintf("Workflow '%s' %s successfully", workflowName, map[bool]string{true: "updated", false: "created"}[exists]),
+		FilePath:     filePath,
+		FileURL:      prURL,
+		ContentSHA:   "",
+		Message:      fmt.Sprintf("Pull request #%d created for workflow '%s'", prNumber, workflowName),
 	}
 
 	logger.Info().
 		Str("owner", owner).
 		Str("repo", repo).
 		Str("workflow", workflowName).
-		Str("path", filePath).
-		Str("action", map[bool]string{true: "updated", false: "created"}[exists]).
-		Msg("Workflow file created/updated successfully")
+		Str("branch", branchName).
+		Int("pr_number", prNumber).
+		Msg("Workflow PR created successfully")
 
 	return response, nil
 }
 
-// checkFileExists checks if a file exists in the repository
-func (s *WorkflowService) checkFileExists(ctx context.Context, token, owner, repo, path string) (bool, string, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/%s", owner, repo, path)
+// verifyRepositoryExists checks if the repository exists and is accessible
+func (s *WorkflowService) verifyRepositoryExists(ctx context.Context, token, owner, repo string) error {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, repo)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return false, "", err
+		return err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -379,30 +404,24 @@ func (s *WorkflowService) checkFileExists(ctx context.Context, token, owner, rep
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return false, "", err
+		return fmt.Errorf("failed to verify repository: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return false, "", nil
+		return fmt.Errorf("%w: repository '%s/%s' not found or you don't have access to it", ErrGitHubAPIFailed, owner, repo)
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("%w: insufficient permissions to access repository '%s/%s'", ErrInsufficientPermissions, owner, repo)
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return false, "", fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("unexpected status code %d when verifying repository: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response to get SHA
-	var fileInfo struct {
-		SHA string `json:"sha"`
-	}
-
-	body, _ := io.ReadAll(resp.Body)
-	if err := json.Unmarshal(body, &fileInfo); err != nil {
-		return true, "", err
-	}
-
-	return true, fileInfo.SHA, nil
+	return nil
 }
 
 // GetWorkflows retrieves all workflow files from a repository
