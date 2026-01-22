@@ -74,3 +74,61 @@ func (s *Service) GetWorkflowRunDetail(ctx context.Context, token, owner, repo s
 func (s *Service) GetJobLogs(ctx context.Context, token, owner, repo string, jobID int64) (string, error) {
 	return s.githubRepo.GetJobLogs(ctx, token, owner, repo, jobID)
 }
+
+// GetUserPackages retrieves packages for the authenticated user
+func (s *Service) GetUserPackages(ctx context.Context, token, packageType string) ([]Package, error) {
+	packages, err := s.githubRepo.GetUserPackages(ctx, token, packageType)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]Package, len(packages))
+	for i, p := range packages {
+		repoName := ""
+		if p.Repository != nil {
+			repoName = p.Repository.Name
+		}
+		result[i] = Package{
+			ID:             p.ID,
+			Name:           p.Name,
+			PackageType:    p.PackageType,
+			Visibility:     p.Visibility,
+			URL:            p.URL,
+			HTMLURL:        p.HTMLURL,
+			CreatedAt:      p.CreatedAt,
+			UpdatedAt:      p.UpdatedAt,
+			OwnerLogin:     p.Owner.Login,
+			RepositoryName: repoName,
+		}
+	}
+	return result, nil
+}
+
+// GetOrgPackages retrieves packages for an organization
+func (s *Service) GetOrgPackages(ctx context.Context, token, org, packageType string) ([]Package, error) {
+	packages, err := s.githubRepo.GetOrgPackages(ctx, token, org, packageType)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]Package, len(packages))
+	for i, p := range packages {
+		repoName := ""
+		if p.Repository != nil {
+			repoName = p.Repository.Name
+		}
+		result[i] = Package{
+			ID:             p.ID,
+			Name:           p.Name,
+			PackageType:    p.PackageType,
+			Visibility:     p.Visibility,
+			URL:            p.URL,
+			HTMLURL:        p.HTMLURL,
+			CreatedAt:      p.CreatedAt,
+			UpdatedAt:      p.UpdatedAt,
+			OwnerLogin:     p.Owner.Login,
+			RepositoryName: repoName,
+		}
+	}
+	return result, nil
+}

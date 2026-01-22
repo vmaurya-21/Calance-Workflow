@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/vmaurya-21/Calance-Workflow/internal/infrastructure/github"
@@ -128,4 +129,108 @@ func (s *Service) GetWorkflows(ctx context.Context, token, owner, repo string) (
 func isValidWorkflowName(name string) bool {
 	matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, name)
 	return matched && len(name) > 0 && len(name) <= 255
+}
+
+// GetWorkflowContent retrieves the content of a workflow file
+func (s *Service) GetWorkflowContent(ctx context.Context, token, owner, repo, filePath string) (*FileContentResponse, error) {
+	// Validate that the file path is a workflow file
+	if !strings.HasPrefix(filePath, ".github/workflows/") {
+		return nil, fmt.Errorf("invalid workflow file path: must be in .github/workflows/")
+	}
+
+	if !strings.HasSuffix(filePath, ".yml") && !strings.HasSuffix(filePath, ".yaml") {
+		return nil, fmt.Errorf("invalid workflow file: must be a .yml or .yaml file")
+	}
+
+	// Fetch file content from GitHub
+	content, sha, err := s.githubClient.GetFileContent(ctx, token, owner, repo, filePath)
+	if err != nil {
+		logger.Error().Err(err).
+			Str("owner", owner).
+			Str("repo", repo).
+			Str("file_path", filePath).
+			Msg("Failed to fetch workflow file content")
+		return nil, fmt.Errorf("failed to fetch file content: %w", err)
+	}
+
+	// Extract file name from path
+	parts := strings.Split(filePath, "/")
+	fileName := parts[len(parts)-1]
+
+	return &FileContentResponse{
+		Name:    fileName,
+		Path:    filePath,
+		SHA:     sha,
+		Size:    len(content),
+		Content: content,
+	}, nil
+}
+
+// UpdateWorkflow updates an existing workflow file and creates a PR
+func (s *Service) UpdateWorkflow(ctx context.Context, token string, req *UpdateWorkflowRequest) (*Response, error) {
+	// Validate that the file path is a workflow file
+	if !strings.HasPrefix(req.FilePath, ".github/workflows/") {
+		return nil, fmt.Errorf("invalid workflow file path: must be in .github/workflows/")
+	}
+
+	if !strings.HasSuffix(req.FilePath, ".yml") && !strings.HasSuffix(req.FilePath, ".yaml") {
+		return nil, fmt.Errorf("invalid workflow file: must be a .yml or .yaml file")
+	}
+
+	// Verify repository exists
+	if err := s.githubClient.VerifyRepository(ctx, token, req.Owner, req.Repository); err != nil {
+		return nil, err
+	}
+
+	// Get default branch
+	defaultBranch, err := s.githubClient.GetDefaultBranch(ctx, token, req.Owner, req.Repository)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get default branch: %w", err)
+	}
+
+	// Extract workflow name from file path
+	parts := strings.Split(req.FilePath, "/")
+	fileName := parts[len(parts)-1]
+	workflowName := strings.TrimSuffix(fileName, ".yml")
+	workflowName = strings.TrimSuffix(workflowName, ".yaml")
+
+	// Create a new branch for the update
+	branchName := fmt.Sprintf("update-workflow/%s-%d", workflowName, time.Now().Unix())
+
+	baseSHA, err := s.githubClient.GetBranchSHA(ctx, token, req.Owner, req.Repository, defaultBranch)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get base branch SHA: %w", err)
+	}
+
+	if err := s.githubClient.CreateBranch(ctx, token, req.Owner, req.Repository, branchName, baseSHA); err != nil {
+		return nil, fmt.Errorf("failed to create branch: %w", err)
+	}
+
+	// Set default commit message if not provided
+	message := req.CommitMessage
+	if message == "" {
+		message = fmt.Sprintf("Update workflow: %s", workflowName)
+	}
+
+	// Update the file on the new branch
+	if err := s.githubClient.UpdateFile(ctx, token, req.Owner, req.Repository, req.FilePath, req.Content, message, branchName, req.SHA); err != nil {
+		return nil, fmt.Errorf("failed to update file: %w", err)
+	}
+
+	// Create pull request
+	prTitle := fmt.Sprintf("Update workflow: %s", workflowName)
+	prBody := fmt.Sprintf("This PR updates the GitHub Actions workflow `%s`.\n\nUpdated automatically by Calance Workflow Manager.", workflowName)
+	prURL, prNumber, err := s.githubClient.CreatePullRequest(ctx, token, req.Owner, req.Repository, branchName, defaultBranch, prTitle, prBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pull request: %w", err)
+	}
+
+	return &Response{
+		Owner:        req.Owner,
+		Repository:   req.Repository,
+		WorkflowName: workflowName,
+		FilePath:     req.FilePath,
+		FileURL:      prURL,
+		Message:      fmt.Sprintf("Pull request #%d created for workflow '%s' update", prNumber, workflowName),
+	}, nil
 }

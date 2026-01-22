@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	pkghttp "github.com/vmaurya-21/Calance-Workflow/internal/pkg/http"
 	"github.com/vmaurya-21/Calance-Workflow/internal/pkg/logger"
 )
@@ -20,12 +19,6 @@ func (h *Handler) List(c *gin.Context) {
 		return
 	}
 
-	userUUID, err := uuid.Parse(userID.(string))
-	if err != nil {
-		pkghttp.InternalServerErrorResponse(c, "Invalid user ID format", err)
-		return
-	}
-
 	// Get owner and repo from URL parameters
 	owner := c.Param("owner")
 	repo := c.Param("repo")
@@ -36,7 +29,7 @@ func (h *Handler) List(c *gin.Context) {
 	}
 
 	// Fetch token from database
-	accessToken, err := h.getAccessToken(userUUID)
+	accessToken, err := h.getAccessToken(userID.(string))
 	if err != nil {
 		pkghttp.UnauthorizedResponse(c, "Access token not found. Please login again.")
 		return

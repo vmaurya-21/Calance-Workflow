@@ -170,3 +170,51 @@ func (wc *WorkflowClient) GetWorkflowFiles(ctx context.Context, token, owner, re
 
 	return workflows, nil
 }
+
+// GetFileContent retrieves the content of a file from the repository
+func (wc *WorkflowClient) GetFileContent(ctx context.Context, token, owner, repo, filePath string) (string, string, error) {
+	path := fmt.Sprintf("/repos/%s/%s/contents/%s", owner, repo, filePath)
+	resp, err := wc.doRequest(ctx, token, http.MethodGet, path, nil)
+	if err != nil {
+		return "", "", err
+	}
+
+	if err := checkResponse(resp); err != nil {
+		return "", "", err
+	}
+
+	var fileInfo Content
+	if err := resp.UnmarshalJSON(&fileInfo); err != nil {
+		return "", "", err
+	}
+
+	// Decode base64 content
+	decodedContent, err := base64.StdEncoding.DecodeString(fileInfo.Content)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to decode file content: %w", err)
+	}
+
+	return string(decodedContent), fileInfo.SHA, nil
+}
+
+// UpdateFile updates an existing file in the repository
+func (wc *WorkflowClient) UpdateFile(ctx context.Context, token, owner, repo, filePath, content, message, branch, sha string) error {
+	path := fmt.Sprintf("/repos/%s/%s/contents/%s", owner, repo, filePath)
+	body := map[string]interface{}{
+		"message": message,
+		"content": base64.StdEncoding.EncodeToString([]byte(content)),
+		"branch":  branch,
+		"sha":     sha, // Required for updates to prevent conflicts
+	}
+
+	resp, err := wc.doRequest(ctx, token, http.MethodPut, path, body)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return checkResponse(resp)
+	}
+
+	return nil
+}

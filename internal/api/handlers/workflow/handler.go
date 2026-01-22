@@ -29,8 +29,13 @@ func (h *Handler) getUserID(c interface{}) (uuid.UUID, error) {
 }
 
 // getAccessToken retrieves access token for user
-func (h *Handler) getAccessToken(userID uuid.UUID) (string, error) {
-	token, err := h.tokenRepository.FindByUserID(userID)
+func (h *Handler) getAccessToken(userID string) (string, error) {
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		return "", err
+	}
+
+	token, err := h.tokenRepository.FindByUserID(userUUID)
 	if err != nil || token == nil {
 		return "", err
 	}

@@ -97,3 +97,26 @@ type Organization struct {
 	AvatarURL   string `json:"avatar_url"`
 	Description string `json:"description"`
 }
+
+// Package represents a GitHub package
+type Package struct {
+	ID          int64       `json:"id"`
+	Name        string      `json:"name"`
+	PackageType string      `json:"package_type"`
+	Visibility  string      `json:"visibility"`
+	URL         string      `json:"url"`
+	HTMLURL     string      `json:"html_url"`
+	CreatedAt   string      `json:"created_at"`
+	UpdatedAt   string      `json:"updated_at"`
+	Owner       Owner       `json:"owner"`
+	Repository  *Repository `json:"repository,omitempty"`
+}
+
+// PackageVersion represents a version of a package
+type PackageVersion struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}

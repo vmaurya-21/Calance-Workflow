@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	domainWorkflow "github.com/vmaurya-21/Calance-Workflow/internal/domain/workflow"
 	pkghttp "github.com/vmaurya-21/Calance-Workflow/internal/pkg/http"
 	"github.com/vmaurya-21/Calance-Workflow/internal/pkg/logger"
@@ -17,12 +16,6 @@ func (h *Handler) Create(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
 		pkghttp.UnauthorizedResponse(c, "User not found in context")
-		return
-	}
-
-	userUUID, err := uuid.Parse(userID.(string))
-	if err != nil {
-		pkghttp.InternalServerErrorResponse(c, "Invalid user ID format", err)
 		return
 	}
 
@@ -42,7 +35,7 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	// Fetch token from database
-	accessToken, err := h.getAccessToken(userUUID)
+	accessToken, err := h.getAccessToken(userID.(string))
 	if err != nil {
 		pkghttp.UnauthorizedResponse(c, "Access token not found. Please login again.")
 		return

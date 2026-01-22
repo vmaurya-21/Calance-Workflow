@@ -44,7 +44,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	tokenRepo := database.NewTokenRepository(db)
 
 	// Initialize domain services
-	scopes := []string{"user:email", "read:user", "read:org", "repo", "workflow"}
+	scopes := []string{"user:email", "read:user", "read:org", "repo", "workflow", "read:packages"}
 	authService := authDomain.NewService(cfg.GitHub.ClientID, cfg.GitHub.ClientSecret, cfg.GitHub.RedirectURL, scopes)
 	workflowService := workflowDomain.NewService()
 	repositoryService := repoDomain.NewService()
@@ -114,6 +114,14 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			repositories.GET("/:owner/:repo/actions/jobs/:job_id/logs", repositoryHandlers.GetJobLogs)
 		}
 
+		// GitHub Packages routes (protected)
+		packages := api.Group("/packages")
+		packages.Use(middleware.AuthMiddleware())
+		{
+			packages.GET("/user", repositoryHandlers.GetUserPackages)
+			packages.GET("/org/:org", repositoryHandlers.GetOrgPackages)
+		}
+
 		// Workflow routes (protected)
 		workflows := api.Group("/workflows")
 		workflows.Use(middleware.AuthMiddleware())
@@ -121,6 +129,10 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			workflows.GET("/:owner/:repo", workflowHandlers.List)
 			workflows.POST("/create", workflowHandlers.Create)
 			workflows.POST("/preview", workflowHandlers.Preview)
+
+			// Workflow edit endpoints
+			workflows.GET("/:owner/:repo/file", workflowHandlers.GetWorkflowContent)
+			workflows.PUT("/:owner/:repo/file", workflowHandlers.UpdateWorkflow)
 		}
 	}
 

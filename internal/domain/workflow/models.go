@@ -142,3 +142,22 @@ func (h *History) BeforeCreate(tx *gorm.DB) error {
 	}
 	return nil
 }
+
+// FileContentResponse represents workflow file content
+type FileContentResponse struct {
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	SHA     string `json:"sha"`
+	Size    int    `json:"size"`
+	Content string `json:"content"`
+}
+
+// UpdateWorkflowRequest represents workflow update request
+type UpdateWorkflowRequest struct {
+	Owner         string `json:"owner" binding:"required"`
+	Repository    string `json:"repository" binding:"required"`
+	FilePath      string `json:"filePath" binding:"required"`
+	Content       string `json:"content" binding:"required"`
+	SHA           string `json:"sha" binding:"required"`
+	CommitMessage string `json:"commitMessage"`
+}

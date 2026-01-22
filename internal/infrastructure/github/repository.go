@@ -184,3 +184,51 @@ func (rc *RepositoryClient) GetJobLogs(ctx context.Context, token, owner, repo s
 
 	return string(resp.Body), nil
 }
+
+// GetUserPackages retrieves packages for the authenticated user
+func (rc *RepositoryClient) GetUserPackages(ctx context.Context, token, packageType string) ([]Package, error) {
+	path := "/user/packages"
+	if packageType != "" {
+		path = fmt.Sprintf("%s?package_type=%s", path, packageType)
+	}
+
+	resp, err := rc.doRequest(ctx, token, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := checkResponse(resp); err != nil {
+		return nil, err
+	}
+
+	var packages []Package
+	if err := resp.UnmarshalJSON(&packages); err != nil {
+		return nil, err
+	}
+
+	return packages, nil
+}
+
+// GetOrgPackages retrieves packages for an organization
+func (rc *RepositoryClient) GetOrgPackages(ctx context.Context, token, org, packageType string) ([]Package, error) {
+	path := fmt.Sprintf("/orgs/%s/packages", org)
+	if packageType != "" {
+		path = fmt.Sprintf("%s?package_type=%s", path, packageType)
+	}
+
+	resp, err := rc.doRequest(ctx, token, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := checkResponse(resp); err != nil {
+		return nil, err
+	}
+
+	var packages []Package
+	if err := resp.UnmarshalJSON(&packages); err != nil {
+		return nil, err
+	}
+
+	return packages, nil
+}
