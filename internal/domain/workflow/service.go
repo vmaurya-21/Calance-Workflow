@@ -26,15 +26,24 @@ type Service struct {
 	ec2Template  *template.EC2Generator
 	k8sTemplate  *template.KubernetesGenerator
 	historyRepo  HistoryRepository
+	templateRepo TemplateRepository
+}
+
+// TemplateRepository defines the interface for template database operations
+type TemplateRepository interface {
+	Create(template *WorkflowTemplate) error
+	List() ([]TemplateSummary, error)
+	GetByID(templateID string) (*WorkflowTemplate, error)
 }
 
 // NewService creates a new workflow service
-func NewService(historyRepo HistoryRepository) *Service {
+func NewService(historyRepo HistoryRepository, templateRepo TemplateRepository) *Service {
 	return &Service{
 		githubClient: github.NewWorkflowClient(),
 		ec2Template:  template.NewEC2Generator(),
 		k8sTemplate:  template.NewKubernetesGenerator(),
 		historyRepo:  historyRepo,
+		templateRepo: templateRepo,
 	}
 }
 
@@ -357,4 +366,14 @@ func (s *Service) GetRepositoryPRs(ctx context.Context, token, owner, repo strin
 	}
 
 	return result, nil
+}
+
+// ListTemplates returns a list of available workflow templates
+func (s *Service) ListTemplates(ctx context.Context) ([]TemplateSummary, error) {
+	return s.templateRepo.List()
+}
+
+// GetTemplate returns a full workflow template by ID
+func (s *Service) GetTemplate(ctx context.Context, templateID string) (*WorkflowTemplate, error) {
+	return s.templateRepo.GetByID(templateID)
 }

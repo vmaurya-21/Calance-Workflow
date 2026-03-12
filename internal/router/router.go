@@ -43,11 +43,12 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	userRepo := database.NewUserRepository(db)
 	tokenRepo := database.NewTokenRepository(db)
 	historyRepo := database.NewHistoryRepository(db)
+	templateRepo := database.NewTemplateRepository(db)
 
 	// Initialize domain services
 	scopes := []string{"user:email", "read:user", "read:org", "repo", "workflow", "read:packages"}
 	authService := authDomain.NewService(cfg.GitHub.ClientID, cfg.GitHub.ClientSecret, cfg.GitHub.RedirectURL, scopes)
-	workflowService := workflowDomain.NewService(historyRepo)
+	workflowService := workflowDomain.NewService(historyRepo, templateRepo)
 	repositoryService := repoDomain.NewService()
 	organizationService := orgDomain.NewService()
 
@@ -129,6 +130,8 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		{
 			workflows.GET("/:owner/:repo", workflowHandlers.List)
 			workflows.GET("/:owner/:repo/prs", workflowHandlers.GetRepositoryPRs)
+			workflows.GET("/templates", workflowHandlers.ListTemplates)
+			workflows.GET("/templates/:id", workflowHandlers.GetTemplate)
 			workflows.POST("/create", workflowHandlers.Create)
 			workflows.POST("/preview", workflowHandlers.Preview)
 

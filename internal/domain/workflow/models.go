@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,7 +52,7 @@ func (r *Request) Validate() error {
 
 // Project represents common project configuration
 type Project struct {
-	ID                string `json:"id" binding:"required"`
+	ID                string `json:"id"`
 	Name              string `json:"name" binding:"required"`
 	DockerContextPath string `json:"dockerContextPath"`
 	DockerfilePath    string `json:"dockerfilePath"`
@@ -71,7 +72,7 @@ type EC2CommonFields struct {
 
 // EC2Project represents EC2-specific project configuration
 type EC2Project struct {
-	ID               string `json:"id" binding:"required"`
+	ID               string `json:"id"`
 	Name             string `json:"name" binding:"required"`
 	Command          string `json:"command"`
 	Port             string `json:"port" binding:"required"`
@@ -93,7 +94,7 @@ type KubernetesCommonFields struct {
 
 // KubernetesProject represents Kubernetes-specific project configuration
 type KubernetesProject struct {
-	ID   string `json:"id" binding:"required"`
+	ID   string `json:"id"`
 	Name string `json:"name" binding:"required"`
 }
 
@@ -172,4 +173,32 @@ type UpdateWorkflowRequest struct {
 	Content       string `json:"content" binding:"required"`
 	SHA           string `json:"sha" binding:"required"`
 	CommitMessage string `json:"commitMessage"`
+}
+
+// WorkflowTemplate represents a dynamic form schema for workflows
+type WorkflowTemplate struct {
+	ID          uuid.UUID       `gorm:"type:uuid;primaryKey" json:"id"`
+	TemplateID  string          `gorm:"type:varchar(100);uniqueIndex;not null" json:"templateId"`
+	Name        string          `gorm:"type:varchar(255);not null" json:"name"`
+	Version     string          `gorm:"type:varchar(50);not null" json:"version"`
+	Description string          `gorm:"type:text" json:"description"`
+	Schema      json.RawMessage `gorm:"type:jsonb" json:"schema"`
+	CreatedAt   time.Time       `json:"createdAt"`
+	UpdatedAt   time.Time       `json:"updatedAt"`
+}
+
+// TemplateSummary represents a concise view of a template
+type TemplateSummary struct {
+	TemplateID  string `json:"templateId"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+}
+
+// BeforeCreate hook for WorkflowTemplate
+func (t *WorkflowTemplate) BeforeCreate(tx *gorm.DB) error {
+	if t.ID == uuid.Nil {
+		t.ID = uuid.New()
+	}
+	return nil
 }

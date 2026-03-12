@@ -8,6 +8,7 @@ import (
 
 	"github.com/vmaurya-21/Calance-Workflow/internal/config"
 	"github.com/vmaurya-21/Calance-Workflow/internal/database"
+	"github.com/vmaurya-21/Calance-Workflow/internal/database/seeds"
 	"github.com/vmaurya-21/Calance-Workflow/internal/logger"
 	"github.com/vmaurya-21/Calance-Workflow/internal/router"
 )
@@ -44,6 +45,11 @@ func main() {
 		logger.Fatal().Err(err).Msg("Failed to initialize database")
 	}
 	logger.Info().Msg("Database initialized successfully")
+
+	// Seed initial data
+	if err := seeds.SeedTemplates(database.GetDB()); err != nil {
+		logger.Error().Err(err).Msg("Failed to seed dynamic templates")
+	}
 
 	// Set up router
 	r := router.SetupRouter(database.GetDB(), cfg)

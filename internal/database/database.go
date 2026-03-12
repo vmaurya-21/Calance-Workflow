@@ -52,6 +52,7 @@ func runMigrations() error {
 		&auth.User{},
 		&auth.Token{},
 		&workflow.History{},
+		&workflow.WorkflowTemplate{},
 	)
 
 	if err != nil {
