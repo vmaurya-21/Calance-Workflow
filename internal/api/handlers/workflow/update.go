@@ -45,7 +45,7 @@ func (h *Handler) UpdateWorkflow(c *gin.Context) {
 		return
 	}
 
-	response, err := h.workflowService.UpdateWorkflow(c.Request.Context(), accessToken, &req)
+	response, err := h.workflowService.UpdateWorkflow(c.Request.Context(), userID.(string), accessToken, &req)
 	if err != nil {
 		pkghttp.InternalServerErrorResponse(c, "Failed to update workflow", err)
 		return

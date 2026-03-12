@@ -30,6 +30,12 @@ func NewBaseGenerator() *BaseGenerator {
 			}
 			return strings.Join(lines, "\n")
 		},
+		"default": func(defaultValue, text string) string {
+			if text == "" {
+				return defaultValue
+			}
+			return text
+		},
 	}
 
 	return &BaseGenerator{

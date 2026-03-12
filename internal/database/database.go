@@ -5,6 +5,7 @@ import (
 
 	"github.com/vmaurya-21/Calance-Workflow/internal/config"
 	"github.com/vmaurya-21/Calance-Workflow/internal/domain/auth"
+	"github.com/vmaurya-21/Calance-Workflow/internal/domain/workflow"
 	"github.com/vmaurya-21/Calance-Workflow/internal/logger"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -50,7 +51,7 @@ func runMigrations() error {
 	err := DB.AutoMigrate(
 		&auth.User{},
 		&auth.Token{},
-		// Add other models here as needed
+		&workflow.History{},
 	)
 
 	if err != nil {

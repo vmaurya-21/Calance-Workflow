@@ -20,6 +20,7 @@ type Request struct {
 	Owner                  string                  `json:"owner" binding:"required"`
 	Repository             string                  `json:"repository" binding:"required"`
 	WorkflowName           string                  `json:"workflowName" binding:"required"`
+	WorkflowFileName       string                  `json:"workflowFileName" binding:"required"`
 	DeploymentType         DeploymentType          `json:"deploymentType" binding:"required,oneof=ec2 kubernetes"`
 	Projects               []Project               `json:"projects" binding:"required,min=1,dive"`
 	EC2CommonFields        *EC2CommonFields        `json:"ec2CommonFields"`
@@ -52,8 +53,8 @@ func (r *Request) Validate() error {
 type Project struct {
 	ID                string `json:"id" binding:"required"`
 	Name              string `json:"name" binding:"required"`
-	DockerContextPath string `json:"dockerContextPath" binding:"required"`
-	DockerfilePath    string `json:"dockerfilePath" binding:"required"`
+	DockerContextPath string `json:"dockerContextPath"`
+	DockerfilePath    string `json:"dockerfilePath"`
 	DotEnvTesting     string `json:"dotEnvTesting"`
 	DotEnvProduction  string `json:"dotEnvProduction"`
 }
@@ -65,14 +66,14 @@ type EC2CommonFields struct {
 	JenkinsJobs              string `json:"jenkinsJobs" binding:"required"`
 	ReleaseTag               string `json:"releaseTag" binding:"required"`
 	CodeownersEmails         string `json:"codeownersEmails" binding:"required"`
-	DevopsStakeholdersEmails string `json:"devopsStakeholdersEmails" binding:"required"`
+	DevopsStakeholdersEmails string `json:"devopsStakeholdersEmails"`
 }
 
 // EC2Project represents EC2-specific project configuration
 type EC2Project struct {
 	ID               string `json:"id" binding:"required"`
 	Name             string `json:"name" binding:"required"`
-	Command          string `json:"command" binding:"required"`
+	Command          string `json:"command"`
 	Port             string `json:"port" binding:"required"`
 	DockerNetwork    string `json:"dockerNetwork"`
 	MountPath        string `json:"mountPath"`
@@ -87,7 +88,7 @@ type KubernetesCommonFields struct {
 	ReleaseTag                 string `json:"releaseTag" binding:"required"`
 	HelmValuesRepository       string `json:"helmValuesRepository" binding:"required"`
 	CodeownersEmailIds         string `json:"codeownersEmailIds" binding:"required"`
-	DevopsStakeholdersEmailIds string `json:"devopsStakeholdersEmailIds" binding:"required"`
+	DevopsStakeholdersEmailIds string `json:"devopsStakeholdersEmailIds"`
 }
 
 // KubernetesProject represents Kubernetes-specific project configuration
@@ -106,6 +107,15 @@ type Response struct {
 	ContentSHA   string    `json:"contentSha"`
 	Message      string    `json:"message"`
 	CreatedAt    time.Time `json:"createdAt"`
+}
+
+// PRResponse represents a pull request status response
+type PRResponse struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+	URL    string `json:"url"`
+	Branch string `json:"branch"`
 }
 
 // File represents a workflow file
@@ -129,6 +139,8 @@ type History struct {
 	FilePath       string         `json:"file_path"`
 	ContentSHA     string         `json:"content_sha"`
 	Status         string         `gorm:"type:varchar(20);not null" json:"status"`
+	PRNumber       int            `json:"pr_number"`
+	PRURL          string         `json:"pr_url"`
 	ErrorMessage   *string        `json:"error_message,omitempty"`
 	CreatedAt      time.Time      `json:"created_at"`
 	UpdatedAt      time.Time      `json:"updated_at"`

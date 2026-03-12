@@ -138,6 +138,26 @@ func (wc *WorkflowClient) CreatePullRequest(ctx context.Context, token, owner, r
 	return prInfo.HTMLURL, prInfo.Number, nil
 }
 
+// ListPullRequests retrieves all pull requests for a repository
+func (wc *WorkflowClient) ListPullRequests(ctx context.Context, token, owner, repo string) ([]PullRequest, error) {
+	path := fmt.Sprintf("/repos/%s/%s/pulls?state=all&sort=created&direction=desc&per_page=100", owner, repo)
+	resp, err := wc.doRequest(ctx, token, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := checkResponse(resp); err != nil {
+		return nil, err
+	}
+
+	var prs []PullRequest
+	if err := resp.UnmarshalJSON(&prs); err != nil {
+		return nil, err
+	}
+
+	return prs, nil
+}
+
 // GetWorkflowFiles retrieves all workflow files from a repository
 func (wc *WorkflowClient) GetWorkflowFiles(ctx context.Context, token, owner, repo string) ([]Content, error) {
 	path := fmt.Sprintf("/repos/%s/%s/contents/.github/workflows", owner, repo)

@@ -14,7 +14,7 @@ func NewKubernetesGenerator() *KubernetesGenerator {
 
 // Generate generates a Kubernetes workflow YAML
 func (kg *KubernetesGenerator) Generate(data interface{}) (string, error) {
-	tmpl := `name: Build & Publish Image (Kubernetes)
+	tmpl := `name: {{.WorkflowName}}
 
 on:
   push:
@@ -27,30 +27,38 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [{{range $i, $p := .Projects}}{{if $i}}, {{end}}{{$p.Name}}{{end}}]
-    permissions:
+        include:
+{{range .Projects}}          - project: {{.Name}}
+            docker_context_path: {{.DockerContextPath}}
+            dockerfile_path: {{.DockerfilePath}}
+            dot_env_file_testing: |
+{{indent 14 .DotEnvTesting}}
+            dot_env_file_production: |
+{{indent 14 .DotEnvProduction}}
+{{end}}    permissions:
       contents: read
       packages: write
     secrets:
       IMAGE_REGISTRY_PASSWORD: {{"{{"}} secrets.IMAGE_REGISTRY_PASSWORD {{"}}"}}
 
-    uses: Calance-US/calance-workflows/.github/workflows/build.yml@{{.KubernetesCommonFields.ReleaseTag}}
+    uses: Calance-US/calance-workflows/.github/workflows/{{.WorkflowFileName}}@{{.KubernetesCommonFields.ReleaseTag}}
     with:
       image_name: {{.Owner}}/{{.Repository}}-{{"{{"}} matrix.project {{"}}"}}
       image_registry: {{"{{"}} vars.IMAGE_REGISTRY {{"}}"}}
       image_registry_username: {{"{{"}} vars.IMAGE_REGISTRY_USERNAME {{"}}"}}
-      docker_context_path: {{"{{"}} matrix.project {{"}}"}}
-      dockerfile_path: ./{{"{{"}} matrix.project {{"}}"}}/Dockerfile
-{{range .Projects}}      dot_env_file_testing: |
-{{indent 8 .DotEnvTesting}}
-{{end}}
+      docker_context_path: {{"{{"}} matrix.docker_context_path {{"}}"}}
+      dockerfile_path: {{"{{"}} matrix.dockerfile_path {{"}}"}}
+      dot_env_file_testing: {{"{{"}} matrix.dot_env_file_testing {{"}}"}}
+      dot_env_file_production: {{"{{"}} matrix.dot_env_file_production {{"}}"}}
+
   deploy-to-kubernetes:
     needs: build-and-push-dockerimages
     strategy:
       fail-fast: false
       matrix:
-        project: [{{range $i, $p := .KubernetesProjects}}{{if $i}}, {{end}}{{$p.Name}}{{end}}]
-    permissions:
+        include:
+{{range .KubernetesProjects}}          - project: {{.Name}}
+{{end}}    permissions:
       contents: read
       packages: write
 
@@ -67,7 +75,7 @@ jobs:
       workflows_release: {{.KubernetesCommonFields.ReleaseTag}}
       helm_values_repository: {{.KubernetesCommonFields.HelmValuesRepository}}
       codeowners_email_ids: {{.KubernetesCommonFields.CodeownersEmailIds}}
-      devops_stakeholders_email_ids: {{.KubernetesCommonFields.DevopsStakeholdersEmailIds}}
+      devops_stakeholders_email_ids: {{default " " .KubernetesCommonFields.DevopsStakeholdersEmailIds}}
     secrets:
       JENKINS_URL: {{"{{"}} secrets.JENKINS_URL {{"}}"}}
       JENKINS_USER: {{"{{"}} secrets.JENKINS_USER {{"}}"}}

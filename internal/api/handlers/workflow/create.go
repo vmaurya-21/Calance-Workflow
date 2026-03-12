@@ -59,11 +59,14 @@ func (h *Handler) Create(c *gin.Context) {
 	// Create workflow file in GitHub repository
 	response, err := h.workflowService.CreateWorkflow(
 		c.Request.Context(),
+		userID.(string),
 		accessToken,
 		request.Owner,
 		request.Repository,
 		request.WorkflowName,
+		request.WorkflowFileName,
 		yamlContent,
+		request.DeploymentType,
 	)
 	if err != nil {
 		logger.Error().

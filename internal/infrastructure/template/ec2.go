@@ -14,7 +14,7 @@ func NewEC2Generator() *EC2Generator {
 
 // Generate generates an EC2 workflow YAML
 func (eg *EC2Generator) Generate(data interface{}) (string, error) {
-	tmpl := `name: Build & Publish Image (EC2)
+	tmpl := `name: {{.WorkflowName}}
 
 on:
   push:
@@ -27,30 +27,46 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [{{range $i, $p := .Projects}}{{if $i}}, {{end}}{{$p.Name}}{{end}}]
-    permissions:
+        include:
+{{range .Projects}}          - project: {{.Name}}
+            docker_context_path: {{.DockerContextPath}}
+            dockerfile_path: {{.DockerfilePath}}
+            dot_env_file_testing: |
+{{indent 14 .DotEnvTesting}}
+            dot_env_file_production: |
+{{indent 14 .DotEnvProduction}}
+{{end}}    permissions:
       contents: read
       packages: write
     secrets:
       IMAGE_REGISTRY_PASSWORD: {{"{{"}} secrets.IMAGE_REGISTRY_PASSWORD {{"}}"}}
 
-    uses: Calance-US/calance-workflows/.github/workflows/build.yml@{{.EC2CommonFields.ReleaseTag}}
+    uses: Calance-US/calance-workflows/.github/workflows/{{.WorkflowFileName}}@{{.EC2CommonFields.ReleaseTag}}
     with:
       image_name: {{.Owner}}/{{.Repository}}-{{"{{"}} matrix.project {{"}}"}}
       image_registry: {{"{{"}} vars.IMAGE_REGISTRY {{"}}"}}
       image_registry_username: {{"{{"}} vars.IMAGE_REGISTRY_USERNAME {{"}}"}}
-      docker_context_path: {{"{{"}} matrix.project {{"}}"}}
-      dockerfile_path: ./{{"{{"}} matrix.project {{"}}"}}/Dockerfile
-{{range .Projects}}      dot_env_file_testing: |
-{{indent 8 .DotEnvTesting}}
-{{end}}
+      docker_context_path: {{"{{"}} matrix.docker_context_path {{"}}"}}
+      dockerfile_path: {{"{{"}} matrix.dockerfile_path {{"}}"}}
+      dot_env_file_testing: {{"{{"}} matrix.dot_env_file_testing {{"}}"}}
+      dot_env_file_production: {{"{{"}} matrix.dot_env_file_production {{"}}"}}
+
   deploy-to-ec2:
     needs: build-and-push-dockerimages
     strategy:
       fail-fast: false
       matrix:
-        project: [{{range $i, $p := .EC2Projects}}{{if $i}}, {{end}}{{$p.Name}}{{end}}]
-    permissions:
+        include:
+{{range .EC2Projects}}          - project: {{.Name}}
+{{if .Command}}            command: {{.Command}}
+{{end}}            port: {{.Port}}
+{{if .DockerNetwork}}            docker_network: {{.DockerNetwork}}
+{{end}}{{if .MountPath}}            mount_path: {{.MountPath}}
+{{end}}{{if .EnableGPU}}            enable_gpu: true
+{{else}}            enable_gpu: false
+{{end}}{{if .LogDriver}}            log_driver: {{.LogDriver}}
+{{end}}{{if .LogDriverOptions}}            log_driver_options: {{.LogDriverOptions}}
+{{end}}{{end}}    permissions:
       contents: read
       packages: write
 
@@ -66,16 +82,15 @@ jobs:
       jenkins_jobs: {{.EC2CommonFields.JenkinsJobs}}
       workflows_release: {{.EC2CommonFields.ReleaseTag}}
       codeowners_email_ids: {{.EC2CommonFields.CodeownersEmails}}
-      devops_stakeholders_email_ids: {{.EC2CommonFields.DevopsStakeholdersEmails}}
-{{range .EC2Projects}}      # EC2 specific configuration for {{.Name}}
-      command: {{.Command}}
-      port: {{.Port}}
-{{if .DockerNetwork}}      docker_network: {{.DockerNetwork}}
-{{end}}{{if .MountPath}}      mount_path: {{.MountPath}}
-{{end}}{{if .EnableGPU}}      enable_gpu: true
-{{end}}{{if .LogDriver}}      log_driver: {{.LogDriver}}
-{{end}}{{if .LogDriverOptions}}      log_driver_options: {{.LogDriverOptions}}
-{{end}}{{end}}    secrets:
+      devops_stakeholders_email_ids: {{default " " .EC2CommonFields.DevopsStakeholdersEmails}}
+      command: {{"{{"}} matrix.command | default "" {{"}}"}}
+      port: {{"{{"}} matrix.port {{"}}"}}
+      docker_network: {{"{{"}} matrix.docker_network | default "" {{"}}"}}
+      mount_path: {{"{{"}} matrix.mount_path | default "" {{"}}"}}
+      enable_gpu: {{"{{"}} matrix.enable_gpu | default false {{"}}"}}
+      log_driver: {{"{{"}} matrix.log_driver | default "" {{"}}"}}
+      log_driver_options: {{"{{"}} matrix.log_driver_options | default "" {{"}}"}}
+    secrets:
       JENKINS_URL: {{"{{"}} secrets.JENKINS_URL {{"}}"}}
       JENKINS_USER: {{"{{"}} secrets.JENKINS_USER {{"}}"}}
       JENKINS_TOKEN: {{"{{"}} secrets.JENKINS_TOKEN {{"}}"}}
