@@ -87,7 +87,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			// Repository endpoints (requires valid JWT)
 			auth.GET("/repositories", middleware.AuthMiddleware(), organizationHandlers.GetUserRepositories)
 			auth.GET("/repositories/:owner/:repo/branches", middleware.AuthMiddleware(), repositoryHandlers.GetBranches)
-			auth.GET("/repositories/:owner/:repo/branches/:branch/commits", middleware.AuthMiddleware(), repositoryHandlers.GetCommits)
+			auth.GET("/repositories/:owner/:repo/commits", middleware.AuthMiddleware(), repositoryHandlers.GetCommits)
 		}
 
 		// Organization routes (protected)
@@ -104,7 +104,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		{
 			repositories.GET("", organizationHandlers.GetUserRepositories)
 			repositories.GET("/:owner/:repo/branches", repositoryHandlers.GetBranches)
-			repositories.GET("/:owner/:repo/branches/:branch/commits", repositoryHandlers.GetCommits)
+			repositories.GET("/:owner/:repo/commits", repositoryHandlers.GetCommits)
 			repositories.GET("/:owner/:repo/tags", repositoryHandlers.GetTags)
 			repositories.POST("/tags", repositoryHandlers.CreateTag)
 

@@ -26,7 +26,7 @@ func (h *Handler) GetCommits(c *gin.Context) {
 
 	owner := c.Param("owner")
 	repo := c.Param("repo")
-	branch := c.Param("branch")
+	branch := c.Query("branch")
 
 	if owner == "" || repo == "" || branch == "" {
 		pkghttp.BadRequestResponse(c, "Owner, repository name, and branch are required")

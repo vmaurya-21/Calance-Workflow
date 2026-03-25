@@ -10,9 +10,9 @@ import (
 // SeedTemplates populates the database with initial workflow templates
 func SeedTemplates(db *gorm.DB) error {
 	templateSchema := `{
-  "templateId": "build-publish-v1",
+  "templateId": "build-publish-v3",
   "name": "Build & Publish Image",
-  "version": "1.0.0",
+  "version": "3.0.1",
   "description": "Standard build and publish workflow for EC2 and Kubernetes",
   "steps": [
     {
@@ -120,7 +120,7 @@ func SeedTemplates(db *gorm.DB) error {
                     { "id": "jenkinsJobs", "label": "Jenkins Jobs", "type": "text", "required": true },
                     { "id": "releaseTag", "label": "Release Tag", "type": "text", "required": true },
                     { "id": "codeownersEmails", "label": "Codeowners Emails", "type": "text", "required": true },
-                    { "id": "devopsStakeholdersEmails", "label": "DevOps Stakeholders Emails", "type": "text" }
+                    { "id": "devopsStakeholdersEmails", "label": "DevOps Stakeholders Emails", "type": "text", "required": true }
                   ]
                 },
                 {
@@ -151,9 +151,9 @@ func SeedTemplates(db *gorm.DB) error {
                   "fields": [
                     { "id": "jenkinsJobName", "label": "Jenkins Job Name", "type": "text", "required": true },
                     { "id": "releaseTag", "label": "Release Tag", "type": "text", "required": true },
-                    { "id": "helmValuesRepository", "label": "Helm Values Repository", "type": "text", "required": true },
+                    { "id": "helmValuesRepository", "label": "Helm Values Repository", "type": "text", "required": true, "defaultValue": "calance-services-helm-values" },
                     { "id": "codeownersEmailIds", "label": "Codeowners Emails", "type": "text", "required": true },
-                    { "id": "devopsStakeholdersEmailIds", "label": "DevOps Stakeholders Emails", "type": "text" }
+                    { "id": "devopsStakeholdersEmailIds", "label": "DevOps Stakeholders Emails", "type": "text", "required": true }
                   ]
                 },
                 {
@@ -175,13 +175,13 @@ func SeedTemplates(db *gorm.DB) error {
 }`
 
 	var initialTemplate workflow.WorkflowTemplate
-	err := db.Where("template_id = ?", "build-publish-v1").First(&initialTemplate).Error
+	err := db.Where("template_id = ?", "build-publish-v3").First(&initialTemplate).Error
 
 	if err == gorm.ErrRecordNotFound {
 		initialTemplate = workflow.WorkflowTemplate{
-			TemplateID:  "build-publish-v1",
+			TemplateID:  "build-publish-v3",
 			Name:        "Build & Publish Image",
-			Version:     "1.0.0",
+			Version:     "3.0.1",
 			Description: "Standard build and publish workflow for EC2 and Kubernetes",
 			Schema:      json.RawMessage(templateSchema),
 		}
@@ -194,5 +194,6 @@ func SeedTemplates(db *gorm.DB) error {
 
 	// Always update the schema to the latest provided in code
 	initialTemplate.Schema = json.RawMessage(templateSchema)
+	initialTemplate.Version = "3.0.1"
 	return db.Save(&initialTemplate).Error
 }

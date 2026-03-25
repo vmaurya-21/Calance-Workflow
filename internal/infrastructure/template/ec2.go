@@ -14,7 +14,13 @@ func NewEC2Generator() *EC2Generator {
 
 // Generate generates an EC2 workflow YAML
 func (eg *EC2Generator) Generate(data interface{}) (string, error) {
-	tmpl := `name: {{.WorkflowName}}
+	tmpl := `{{- $hasTesting := false -}}
+{{- $hasProduction := false -}}
+{{- range .Projects -}}
+  {{- if .DotEnvTesting -}}{{- $hasTesting = true -}}{{- end -}}
+  {{- if .DotEnvProduction -}}{{- $hasProduction = true -}}{{- end -}}
+{{- end -}}
+name: {{.WorkflowName}}
 
 on:
   push:
@@ -27,35 +33,39 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        project: [{{range $i, $p := .Projects}}{{if $i}},{{end}}{{$p.Name}}{{end}}]
         include:
 {{range .Projects}}          - project: {{.Name}}
             docker_context_path: {{.DockerContextPath}}
             dockerfile_path: {{.DockerfilePath}}
-            dot_env_file_testing: |
+{{if .DotEnvTesting}}            dot_env_file_testing: |
 {{indent 14 .DotEnvTesting}}
-            dot_env_file_production: |
+{{end}}{{if .DotEnvProduction}}            dot_env_file_production: |
 {{indent 14 .DotEnvProduction}}
+{{end}}
 {{end}}    permissions:
       contents: read
       packages: write
     secrets:
-      IMAGE_REGISTRY_PASSWORD: {{"{{"}} secrets.IMAGE_REGISTRY_PASSWORD {{"}}"}}
+      IMAGE_REGISTRY_PASSWORD: ${{"{{"}} secrets.IMAGE_REGISTRY_PASSWORD {{"}}"}}
 
     uses: Calance-US/calance-workflows/.github/workflows/{{.WorkflowFileName}}@{{.EC2CommonFields.ReleaseTag}}
     with:
-      image_name: {{.Owner}}/{{.Repository}}-{{"{{"}} matrix.project {{"}}"}}
-      image_registry: {{"{{"}} vars.IMAGE_REGISTRY {{"}}"}}
-      image_registry_username: {{"{{"}} vars.IMAGE_REGISTRY_USERNAME {{"}}"}}
-      docker_context_path: {{"{{"}} matrix.docker_context_path {{"}}"}}
-      dockerfile_path: {{"{{"}} matrix.dockerfile_path {{"}}"}}
-      dot_env_file_testing: {{"{{"}} matrix.dot_env_file_testing {{"}}"}}
-      dot_env_file_production: {{"{{"}} matrix.dot_env_file_production {{"}}"}}
+      image_name: {{.Owner}}/{{.Repository}}-${{"{{"}} matrix.project {{"}}"}}
+      image_registry: ${{"{{"}} vars.IMAGE_REGISTRY {{"}}"}}
+      image_registry_username: ${{"{{"}} vars.IMAGE_REGISTRY_USERNAME {{"}}"}}
+      docker_context_path: ${{"{{"}} matrix.docker_context_path {{"}}"}}
+      dockerfile_path: ${{"{{"}} matrix.dockerfile_path {{"}}"}}
+{{if $hasTesting}}      dot_env_file_testing: ${{"{{"}} matrix.dot_env_file_testing {{"}}"}}
+{{end}}{{if $hasProduction}}      dot_env_file_production: ${{"{{"}} matrix.dot_env_file_production {{"}}"}}
+{{end}}
 
   deploy-to-ec2:
     needs: build-and-push-dockerimages
     strategy:
       fail-fast: false
       matrix:
+        project: [{{range $i, $p := .EC2Projects}}{{if $i}},{{end}}{{$p.Name}}{{end}}]
         include:
 {{range .EC2Projects}}          - project: {{.Name}}
 {{if .Command}}            command: {{.Command}}
@@ -72,30 +82,31 @@ jobs:
 
     uses: Calance-US/calance-workflows/.github/workflows/deploy-ec2.yml@{{.EC2CommonFields.ReleaseTag}}
     with:
-      repository_name: {{"{{"}} github.event.repository.name {{"}}"}}
-      image_name: {{.Owner}}/{{.Repository}}-{{"{{"}} matrix.project {{"}}"}}
-      image_registry: {{"{{"}} vars.IMAGE_REGISTRY {{"}}"}}
-      version: {{"{{"}} needs.build-and-push-dockerimages.outputs.version {{"}}"}}
-      cluster_environment: {{"{{"}} needs.build-and-push-dockerimages.outputs.cluster_environment {{"}}"}}
-      commit_id: {{"{{"}} needs.build-and-push-dockerimages.outputs.commit_id {{"}}"}}
+      repository_name: ${{"{{"}} github.event.repository.name {{"}}"}}
+      image_name: {{.Owner}}/{{.Repository}}-${{"{{"}} matrix.project {{"}}"}}
+      image_registry: ${{"{{"}} vars.IMAGE_REGISTRY {{"}}"}}
+      version: ${{"{{"}} needs.build-and-push-dockerimages.outputs.version {{"}}"}}
+      cluster_environment: ${{"{{"}} needs.build-and-push-dockerimages.outputs.cluster_environment {{"}}"}}
+      commit_id: ${{"{{"}} needs.build-and-push-dockerimages.outputs.commit_id {{"}}"}}
       aws_region: {{.EC2CommonFields.AWSRegion}}
       jenkins_jobs: {{.EC2CommonFields.JenkinsJobs}}
       workflows_release: {{.EC2CommonFields.ReleaseTag}}
       codeowners_email_ids: {{.EC2CommonFields.CodeownersEmails}}
-      devops_stakeholders_email_ids: {{default " " .EC2CommonFields.DevopsStakeholdersEmails}}
-      command: {{"{{"}} matrix.command | default "" {{"}}"}}
-      port: {{"{{"}} matrix.port {{"}}"}}
-      docker_network: {{"{{"}} matrix.docker_network | default "" {{"}}"}}
-      mount_path: {{"{{"}} matrix.mount_path | default "" {{"}}"}}
-      enable_gpu: {{"{{"}} matrix.enable_gpu | default false {{"}}"}}
-      log_driver: {{"{{"}} matrix.log_driver | default "" {{"}}"}}
-      log_driver_options: {{"{{"}} matrix.log_driver_options | default "" {{"}}"}}
+      devops_stakeholders_email_ids: {{.EC2CommonFields.DevopsStakeholdersEmails}}
+      command: ${{"{{"}} matrix.command | default "" {{"}}"}}
+      port: ${{"{{"}} matrix.port {{"}}"}}
+      docker_network: ${{"{{"}} matrix.docker_network | default "" {{"}}"}}
+      mount_path: ${{"{{"}} matrix.mount_path | default "" {{"}}"}}
+      enable_gpu: ${{"{{"}} matrix.enable_gpu | default false {{"}}"}}
+      log_driver: ${{"{{"}} matrix.log_driver | default "" {{"}}"}}
+      log_driver_options: ${{"{{"}} matrix.log_driver_options | default "" {{"}}"}}
     secrets:
-      JENKINS_URL: {{"{{"}} secrets.JENKINS_URL {{"}}"}}
-      JENKINS_USER: {{"{{"}} secrets.JENKINS_USER {{"}}"}}
-      JENKINS_TOKEN: {{"{{"}} secrets.JENKINS_TOKEN {{"}}"}}
-      SMTP_PASSWORD: {{"{{"}} secrets.SMTP_PASSWORD {{"}}"}}
-      AWS_CREDENTIALS: {{"{{"}} secrets.AWS_CREDENTIALS {{"}}"}}
+      JENKINS_URL: ${{"{{"}} secrets.JENKINS_URL {{"}}"}}
+      JENKINS_USER: ${{"{{"}} secrets.JENKINS_USER {{"}}"}}
+      JENKINS_TOKEN: ${{"{{"}} secrets.JENKINS_TOKEN {{"}}"}}
+      SMTP_PASSWORD: ${{"{{"}} secrets.SMTP_PASSWORD {{"}}"}}
+      AWS_ACCESS_KEY_ID: ${{"{{"}} secrets.AWS_ACCESS_KEY_ID {{"}}"}}
+      AWS_SECRET_ACCESS_KEY: ${{"{{"}} secrets.AWS_SECRET_ACCESS_KEY {{"}}"}}
 `
 
 	return eg.Execute("ec2-workflow", tmpl, data)
