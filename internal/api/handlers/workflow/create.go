@@ -86,5 +86,44 @@ func (h *Handler) Create(c *gin.Context) {
 		Str("file_path", response.FilePath).
 		Msg("Workflow created successfully")
 
+	// Create EC2 Infrastructure PR if applicable
+	if request.DeploymentType == domainWorkflow.DeploymentTypeEC2 && len(request.InfrastructureCredentials) > 0 {
+		err := h.workflowService.CreateEC2InfrastructurePR(
+			c.Request.Context(),
+			accessToken,
+			request.Owner,
+			request.Repository,
+			request.InfrastructureCredentials,
+		)
+		if err != nil {
+			logger.Error().Err(err).Msg("Failed to create EC2 infrastructure PR")
+			response.Message += " (Note: Failed to create infrastructure PR)"
+		} else {
+			response.Message += " and infrastructure PR"
+		}
+	}
+
+	logger.Info().
+		Str("deployment_type", string(request.DeploymentType)).
+		Int("k8s_creds_len", len(request.InfrastructureCredentials)).
+		Msg("Checking if Kubernetes Infrastructure PR should be created")
+
+	// Create Kubernetes Infrastructure PR if applicable
+	if request.DeploymentType == domainWorkflow.DeploymentTypeKubernetes && len(request.InfrastructureCredentials) > 0 {
+		err := h.workflowService.CreateKubernetesInfrastructurePR(
+			c.Request.Context(),
+			accessToken,
+			request.Owner,
+			request.Repository,
+			request.InfrastructureCredentials,
+		)
+		if err != nil {
+			logger.Error().Err(err).Msg("Failed to create Kubernetes infrastructure PR")
+			response.Message += " (Note: Failed to create infrastructure PR)"
+		} else {
+			response.Message += " and infrastructure PR"
+		}
+	}
+
 	pkghttp.SuccessResponse(c, http.StatusCreated, response.Message, response)
 }

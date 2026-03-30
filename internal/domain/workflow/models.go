@@ -18,16 +18,17 @@ const (
 
 // Request represents a workflow creation request
 type Request struct {
-	Owner                  string                  `json:"owner" binding:"required"`
-	Repository             string                  `json:"repository" binding:"required"`
-	WorkflowName           string                  `json:"workflowName" binding:"required"`
-	WorkflowFileName       string                  `json:"workflowFileName" binding:"required"`
-	DeploymentType         DeploymentType          `json:"deploymentType" binding:"required,oneof=ec2 kubernetes"`
-	Projects               []Project               `json:"projects" binding:"required,min=1,dive"`
-	EC2CommonFields        *EC2CommonFields        `json:"ec2CommonFields"`
-	EC2Projects            []EC2Project            `json:"ec2Projects"`
-	KubernetesCommonFields *KubernetesCommonFields `json:"kubernetesCommonFields"`
-	KubernetesProjects     []KubernetesProject     `json:"kubernetesProjects"`
+	Owner                     string                     `json:"owner" binding:"required"`
+	Repository                string                     `json:"repository" binding:"required"`
+	WorkflowName              string                     `json:"workflowName" binding:"required"`
+	WorkflowFileName          string                     `json:"workflowFileName" binding:"required"`
+	DeploymentType            DeploymentType             `json:"deploymentType" binding:"required,oneof=ec2 kubernetes"`
+	Projects                  []Project                  `json:"projects" binding:"required,min=1,dive"`
+	EC2CommonFields           *EC2CommonFields           `json:"ec2CommonFields"`
+	EC2Projects               []EC2Project               `json:"ec2Projects"`
+	InfrastructureCredentials []InfrastructureCredential `json:"infrastructureCredentials"`
+	KubernetesCommonFields    *KubernetesCommonFields    `json:"kubernetesCommonFields"`
+	KubernetesProjects        []KubernetesProject        `json:"kubernetesProjects"`
 }
 
 // Validate validates the workflow request
@@ -58,6 +59,17 @@ type Project struct {
 	DockerfilePath    string `json:"dockerfilePath"`
 	DotEnvTesting     string `json:"dotEnvTesting"`
 	DotEnvProduction  string `json:"dotEnvProduction"`
+}
+
+// InfrastructureCredential represents EC2 and Kubernetes infrastructure credentials
+type InfrastructureCredential struct {
+	JenkinsNodeName    string `json:"jenkinsNodeName"`
+	ProjectName        string `json:"projectName"`
+	Environment        string `json:"environment"`
+	AWSAccessKeyID     string `json:"awsAccessKeyId"`
+	AWSSecretAccessKey string `json:"awsSecretAccessKey"`
+	Environments       string `json:"environments"`
+	Namespace          string `json:"namespace"` // Used for Kubernetes
 }
 
 // EC2CommonFields represents shared EC2 configuration

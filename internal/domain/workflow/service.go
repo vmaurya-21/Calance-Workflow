@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -376,4 +377,227 @@ func (s *Service) ListTemplates(ctx context.Context) ([]TemplateSummary, error) 
 // GetTemplate returns a full workflow template by ID
 func (s *Service) GetTemplate(ctx context.Context, templateID string) (*WorkflowTemplate, error) {
 	return s.templateRepo.GetByID(templateID)
+}
+
+// CreateEC2InfrastructurePR creates a PR in calance-services-helm-values with deployment.json for EC2
+func (s *Service) CreateEC2InfrastructurePR(ctx context.Context, token, owner, appRepo string, creds []InfrastructureCredential) error {
+	if len(creds) == 0 {
+		return nil
+	}
+
+	targetRepo := "calance-services-helm-values"
+	// Verify repository exists
+	if err := s.githubClient.VerifyRepository(ctx, token, owner, targetRepo); err != nil {
+		logger.Error().Err(err).Str("owner", owner).Str("repo", targetRepo).Msg("calance-services-helm-values repository not found or not accessible")
+		return fmt.Errorf("infrastructure repository not accessible: %w", err)
+	}
+
+	// Get default branch
+	defaultBranch, err := s.githubClient.GetDefaultBranch(ctx, token, owner, targetRepo)
+	if err != nil {
+		return fmt.Errorf("failed to get default branch for infrastructure repo: %w", err)
+	}
+
+	// Create a new branch
+	branchName := fmt.Sprintf("add-ec2-deployment-%s-%d", appRepo, time.Now().Unix())
+	baseSHA, err := s.githubClient.GetBranchSHA(ctx, token, owner, targetRepo, defaultBranch)
+	if err != nil {
+		return fmt.Errorf("failed to get base branch SHA: %w", err)
+	}
+
+	if err := s.githubClient.CreateBranch(ctx, token, owner, targetRepo, branchName, baseSHA); err != nil {
+		return fmt.Errorf("failed to create branch: %w", err)
+	}
+
+	// Group credentials by mapped environment
+	envData := make(map[string]map[string]interface{})
+	for _, cred := range creds {
+		mappedEnv := ""
+		if cred.Environment == "stage" {
+			mappedEnv = "testing"
+		} else if cred.Environment == "prod" {
+			mappedEnv = "production"
+		} else {
+			mappedEnv = cred.Environment // Fallback
+		}
+
+		if envData[mappedEnv] == nil {
+			envData[mappedEnv] = make(map[string]interface{})
+		}
+
+		key := fmt.Sprintf("%s-%s", cred.ProjectName, mappedEnv)
+		envData[mappedEnv][key] = map[string]string{
+			"cloud_name": cred.JenkinsNodeName,
+		}
+	}
+
+	// For each environment, fetch, update/create file
+	filesChanged := false
+	for env, newData := range envData {
+		filePath := fmt.Sprintf("%s/%s/deployment.json", env, appRepo)
+
+		var currentData map[string]interface{}
+
+		contentStr, sha, err := s.githubClient.GetFileContent(ctx, token, owner, targetRepo, filePath)
+		fileExists := err == nil
+
+		if fileExists {
+			if parseErr := json.Unmarshal([]byte(contentStr), &currentData); parseErr != nil {
+				currentData = make(map[string]interface{})
+			}
+		} else {
+			currentData = make(map[string]interface{})
+		}
+
+		// Merge new data
+		for k, v := range newData {
+			currentData[k] = v
+		}
+
+		updatedContent, err := json.MarshalIndent(currentData, "", "  ")
+		if err != nil {
+			continue
+		}
+
+		message := fmt.Sprintf("Update %s for %s", filePath, appRepo)
+		if fileExists {
+			err = s.githubClient.UpdateFile(ctx, token, owner, targetRepo, filePath, string(updatedContent), message, branchName, sha)
+		} else {
+			err = s.githubClient.CreateFile(ctx, token, owner, targetRepo, filePath, string(updatedContent), message, branchName)
+		}
+		if err == nil {
+			filesChanged = true
+		} else {
+			logger.Error().Err(err).Str("file", filePath).Msg("Failed to commit deployment.json")
+		}
+	}
+
+	if !filesChanged {
+		return errors.New("failed to create or update any deployment.json files")
+	}
+
+	// Create pull request
+	prTitle := fmt.Sprintf("Update EC2 deployments for %s", appRepo)
+	prBody := fmt.Sprintf("This PR adds/updates EC2 `deployment.json` configurations for **%s**.\n\nGenerated automatically by Calance Workflow Manager.", appRepo)
+	_, prNumber, err := s.githubClient.CreatePullRequest(ctx, token, owner, targetRepo, branchName, defaultBranch, prTitle, prBody)
+	if err != nil {
+		return fmt.Errorf("failed to create PR in infrastructure repo: %w", err)
+	}
+
+	logger.Info().Int("pr_number", prNumber).Str("repo", targetRepo).Msg("Created EC2 Infrastructure PR")
+	return nil
+}
+
+// CreateKubernetesInfrastructurePR creates a PR in calance-services-helm-values with deployment.json for Kubernetes
+func (s *Service) CreateKubernetesInfrastructurePR(ctx context.Context, token, owner, appRepo string, creds []InfrastructureCredential) error {
+	logger.Info().Int("creds_length", len(creds)).Str("appRepo", appRepo).Msg("Entering CreateKubernetesInfrastructurePR")
+	if len(creds) == 0 {
+		logger.Info().Msg("Skipping CreateKubernetesInfrastructurePR because creds length is 0")
+		return nil
+	}
+
+	targetRepo := "calance-services-helm-values"
+	// Verify repository exists
+	if err := s.githubClient.VerifyRepository(ctx, token, owner, targetRepo); err != nil {
+		logger.Error().Err(err).Str("owner", owner).Str("repo", targetRepo).Msg("calance-services-helm-values repository not found or not accessible")
+		return fmt.Errorf("infrastructure repository not accessible: %w", err)
+	}
+
+	// Get default branch
+	defaultBranch, err := s.githubClient.GetDefaultBranch(ctx, token, owner, targetRepo)
+	if err != nil {
+		return fmt.Errorf("failed to get default branch for infrastructure repo: %w", err)
+	}
+
+	// Create a new branch
+	branchName := fmt.Sprintf("add-k8s-deployment-%s-%d", appRepo, time.Now().Unix())
+	baseSHA, err := s.githubClient.GetBranchSHA(ctx, token, owner, targetRepo, defaultBranch)
+	if err != nil {
+		return fmt.Errorf("failed to get base branch SHA: %w", err)
+	}
+
+	if err := s.githubClient.CreateBranch(ctx, token, owner, targetRepo, branchName, baseSHA); err != nil {
+		return fmt.Errorf("failed to create branch: %w", err)
+	}
+
+	// Group credentials by mapped environment
+	envData := make(map[string]map[string]interface{})
+	for _, cred := range creds {
+		mappedEnv := ""
+		if cred.Environment == "stage" {
+			mappedEnv = "testing"
+		} else if cred.Environment == "prod" {
+			mappedEnv = "production"
+		} else {
+			mappedEnv = cred.Environment // Fallback
+		}
+
+		if envData[mappedEnv] == nil {
+			envData[mappedEnv] = make(map[string]interface{})
+		}
+
+		key := fmt.Sprintf("%s-%s", cred.ProjectName, mappedEnv)
+		envData[mappedEnv][key] = map[string]string{
+			"namespace":          cred.Namespace,
+			"cloud_name":         cred.JenkinsNodeName,
+			"helm_chart_version": "v4.2.4",
+			"helm_chart_url":     "oci://ghcr.io/calance-us/calance-services",
+		}
+	}
+
+	// For each environment, fetch, update/create file
+	filesChanged := false
+	for env, newData := range envData {
+		filePath := fmt.Sprintf("%s/%s/deployment.json", env, appRepo)
+
+		var currentData map[string]interface{}
+
+		contentStr, sha, err := s.githubClient.GetFileContent(ctx, token, owner, targetRepo, filePath)
+		fileExists := err == nil
+
+		if fileExists {
+			if parseErr := json.Unmarshal([]byte(contentStr), &currentData); parseErr != nil {
+				currentData = make(map[string]interface{})
+			}
+		} else {
+			currentData = make(map[string]interface{})
+		}
+
+		// Merge new data
+		for k, v := range newData {
+			currentData[k] = v
+		}
+
+		updatedContent, err := json.MarshalIndent(currentData, "", "  ")
+		if err != nil {
+			continue
+		}
+
+		message := fmt.Sprintf("Update %s for %s Kubernetes deployments", filePath, appRepo)
+		if fileExists {
+			err = s.githubClient.UpdateFile(ctx, token, owner, targetRepo, filePath, string(updatedContent), message, branchName, sha)
+		} else {
+			err = s.githubClient.CreateFile(ctx, token, owner, targetRepo, filePath, string(updatedContent), message, branchName)
+		}
+		if err == nil {
+			filesChanged = true
+		} else {
+			logger.Error().Err(err).Str("file", filePath).Msg("Failed to commit Kubernetes deployment.json")
+		}
+	}
+
+	if !filesChanged {
+		return errors.New("failed to create or update any Kubernetes deployment.json files")
+	}
+
+	// Create pull request
+	prTitle := fmt.Sprintf("Update Kubernetes deployments for %s", appRepo)
+	prBody := fmt.Sprintf("This PR adds/updates Kubernetes `deployment.json` configurations for **%s**.\n\nGenerated automatically by Calance Workflow Manager.", appRepo)
+	_, prNumber, err := s.githubClient.CreatePullRequest(ctx, token, owner, targetRepo, branchName, defaultBranch, prTitle, prBody)
+	if err != nil {
+		return fmt.Errorf("failed to create PR in infrastructure repo: %w", err)
+	}
+
+	logger.Info().Int("pr_number", prNumber).Str("repo", targetRepo).Msg("Created Kubernetes Infrastructure PR")
+	return nil
 }
